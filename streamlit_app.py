@@ -27,7 +27,7 @@ if not st.session_state.logged_in:
         if user == APP_USERNAME and pwd == APP_PASSWORD:
             st.session_state.logged_in = True
             st.success("Logged in successfully!")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Incorrect username or password.")
     st.stop()
