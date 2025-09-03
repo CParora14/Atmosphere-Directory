@@ -1,37 +1,39 @@
 import streamlit as st
+import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
 
+# Page setup
 st.set_page_config(page_title="Atmosphere Society Business Directory", layout="wide")
 
-# --- Read secrets (must exist on Streamlit Cloud) ---
-APP_USERNAME = st.secrets.get("APP_USERNAME")
-APP_PASSWORD = st.secrets.get("APP_PASSWORD")
+# -----------------------------
+# AUTH: use credentials from Streamlit secrets (TOML)
+# -----------------------------
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
 
-if not APP_USERNAME or not APP_PASSWORD:
-    st.error("Server secrets missing. Set APP_USERNAME and APP_PASSWORD in App → Settings → Secrets.")
-    st.stop()
+@st.cache_resource(show_spinner=False)
+def get_gspread_client():
+    sa_info = dict(st.secrets["gcp_service_account"])   # load service account from secrets
+    creds = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+    return gspread.authorize(creds)
 
-# --- Simple login state ---
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
+gc = get_gspread_client()
 
-st.title("🏡 Atmosphere Society Business Directory")
+# -----------------------------
+# Example Google Sheet Access
+# -----------------------------
+SPREADSHEET_ID = "YOUR_GOOGLE_SHEET_ID_HERE"   # 👈 replace with your Sheet ID
 
-if not st.session_state.logged_in:
-    col1, col2 = st.columns(2)
-    with col1:
-        user = st.text_input("Username")
-    with col2:
-        pwd = st.text_input("Password", type="password")
+try:
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    worksheet = sh.sheet1
+    data = worksheet.get_all_values()
+    df = pd.DataFrame(data[1:], columns=data[0])  # first row as header
+    st.success("✅ Connected to Google Sheet!")
+    st.dataframe(df)
+except Exception as e:
+    st.error(f"❌ Could not connect: {e}")
 
-    if st.button("Sign in"):
-        if user == APP_USERNAME and pwd == APP_PASSWORD:
-            st.session_state.logged_in = True
-            st.success("Logged in successfully!")
-            st.rerun()
-        else:
-            st.error("Incorrect username or password.")
-    st.stop()
-
-# --- App content after login ---
-st.success(f"Welcome, {APP_USERNAME}!")
-st.write("This is where the directory UI will appear.")
