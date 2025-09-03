@@ -1,12 +1,15 @@
-# ──────────────────────────────────────────────────────────────────────────────
-# Atmosphere Society Directory - BRANDED + SHOWCASE
-# ──────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------
+# Atmosphere Society Business Directory – Streamlit
+# Tabs: Directory | Submit | Vicinity Vendors | Showcase | Admin
+# Auth: Google Sheets via st.secrets["gcp_service_account"]
+# Login: username & password from secrets (Admin only)
+# ---------------------------------------------------------------
 
-import os
+from __future__ import annotations
+
 import re
 import time
-from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 import pandas as pd
 import streamlit as st
@@ -14,117 +17,147 @@ import gspread
 from gspread.exceptions import SpreadsheetNotFound, WorksheetNotFound
 from google.oauth2.service_account import Credentials
 
-# Optional: Google Drive for file uploads to Showcase
-try:
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaFileUpload
-    DRIVE_AVAILABLE = True
-except Exception:
-    DRIVE_AVAILABLE = False
+# ------------- Branding (Atmosphere) ---------------------------
 
-# ---------- Page ----------
+PRIMARY   = "#1B8CD8"   # main Atmosphere blue
+PRIMARY_2 = "#6BC6FF"   # light blue accent
+INK       = "#0C2A4A"   # dark ink for text
+CARD_BG   = "#0E1C2B"   # dark card
+PAGE_BG   = "#0A1522"   # page bg
+WARNING   = "#F7B500"
+
+BANNER_GRADIENT = f"linear-gradient(90deg, {PRIMARY} 0%, {PRIMARY_2} 100%)"
+
+LOGO_PATH = "logo.png"          # put a file called logo.png in the repo root (optional)
+LOGO_URL  = st.secrets.get("LOGO_URL", None)  # or set in secrets if you prefer a hosted logo
+
+# ------------- Streamlit basics --------------------------------
 st.set_page_config(
     page_title="Atmosphere Society Business Directory",
     page_icon="🏡",
     layout="wide",
 )
 
-# ---------- BRAND COLORS (Atmosphere blues) ----------
-BRAND_PRIMARY   = "#1a8ed1"   # mid sky blue
-BRAND_PRIMARY_2 = "#0e78b4"   # deeper
-BRAND_ACCENT    = "#7cc8ff"   # light accent
-CARD_BG         = "#0f172a"   # slate-900
-PAGE_BG         = "#07111f"   # dark blue
-TEXT_SUB        = "#cbd5e1"
-
-# ---------- STYLE ----------
+# Global CSS (brand look)
 st.markdown(
     f"""
     <style>
       .stApp {{
-        background: radial-gradient(1300px 600px at 15% 0%, #0a1d34 0%, {PAGE_BG} 40%, #050d1a 100%);
+        background: {PAGE_BG};
+        color: #FFFFFF;
       }}
-      .atm-top {{
-        margin: 6px 0 22px 0;
+      section[data-testid="stSidebar"] {{
+        background: {CARD_BG};
+      }}
+      .atm-banner {{
+        background: {BANNER_GRADIENT};
+        padding: 18px 22px;
         border-radius: 18px;
-        padding: 16px 20px;
-        background: linear-gradient(90deg, {BRAND_PRIMARY_2}, {BRAND_PRIMARY});
-        color: #fff;
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        box-shadow: 0 10px 30px rgba(0,0,0,.35);
-      }}
-      .atm-title {{
-        margin: 0;
-        font-size: 1.8rem;
-        line-height: 1.2;
-        font-weight: 800;
-      }}
-      .atm-sub {{
-        opacity: .9;
-        font-size: .95rem;
+        box-shadow: 0 10px 35px rgba(0,0,0,.35);
+        margin-bottom: 18px;
       }}
       .atm-card {{
         background: {CARD_BG};
         border-radius: 16px;
         padding: 16px;
-        border: 1px solid rgba(255,255,255,.06);
+        border: 1px solid rgba(255,255,255,.08);
       }}
-      .atm-card h3 {{
-        color: #fff; margin: 0 0 4px 0; font-size: 1.1rem;
+      .atm-pill {{
+        background: rgba(255,255,255,.1);
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
       }}
-      .atm-small {{
-        color: {TEXT_SUB}; font-size: .9rem;
+      .atm-title {{
+        font-weight: 700;
+        font-size: 42px;
+        letter-spacing: .2px;
       }}
-      .stButton>button.atm-approve {{
-        background: #22c55e; color: #0b0f1a; border: 0; font-weight: 700;
+      .atm-subt {{
+        opacity: .9;
+        font-size: 14px;
+      }}
+      .atm-btn {{
+        background: {PRIMARY};
+        color: white !important;
+        padding: 8px 14px;
+        border-radius: 8px;
+        text-decoration: none;
+        border: none;
+      }}
+      .small-dim {{
+        opacity: .7;
+        font-size: 12px;
+      }}
+      .atm-grid {{
+        display: grid;
+        gap: 16px;
+      }}
+      @media (min-width: 1100px) {{
+        .atm-grid.cols-3 {{ grid-template-columns: repeat(3, 1fr); }}
+      }}
+      @media (max-width: 1099px) {{
+        .atm-grid.cols-3 {{ grid-template-columns: repeat(1, 1fr); }}
+      }}
+      .atm-logo {{
+        height: 42px;
+        margin-right: 8px;
       }}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# ---------- LOGO ----------
-def render_header():
-    logo_path = "logo.png"
-    logo_url = st.secrets.get("LOGO_URL", "")
-    have_file = os.path.exists(logo_path)
-    col1, col2 = st.columns([0.1, 0.9])
-    with st.container():
-        st.markdown('<div class="atm-top">', unsafe_allow_html=True)
-        if have_file:
-            col1.image(logo_path, width=56)
-        elif logo_url:
-            col1.image(logo_url, width=56)
+# Banner with optional logo
+col_logo, col_title = st.columns([1, 6])
+with col_logo:
+    try:
+        if LOGO_URL:
+            st.image(LOGO_URL, use_container_width=False, caption=None)
         else:
-            col1.markdown("🏡", help="Upload logo.png to the repo for a branded header.")
-        col2.markdown('<div class="atm-title">Atmosphere Society Business Directory</div>', unsafe_allow_html=True)
-        col2.markdown('<div class="atm-sub">Discover resident businesses • Submit listings • Showcase products</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.image(LOGO_PATH, use_container_width=False, caption=None)
+    except Exception:
+        pass
 
-render_header()
+with col_title:
+    st.markdown(
+        f"""
+        <div class="atm-banner">
+          <div class="atm-title">Atmosphere Society Business Directory</div>
+          <div class="atm-subt">Phase 1 & 2 · Simple, free, community-first</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-# ---------- CONFIG (EDIT URL ONLY if you change sheet) ----------
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1SWVjrtC8qh9fXFhrcXbc_6cgNS39tc87vvPz1PCaeFY/edit?gid=0#gid=0"
+# ------------- Admin login (username + password) ---------------
 
-DIRECTORY_SHEET = "Business_Listings"
-VENDORS_SHEET   = "Vicinity_Vendors"
-SHOWCASE_SHEET  = "Showcase"           # <-- new
+APP_USERNAME = st.secrets.get("APP_USERNAME", "")
+APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
 
-EXPECTED_COLUMNS: List[str] = [
-    "Approved","Phase","Wing","Flat_No",
-    "Resident_Name","Phone","Email",
-    "Business_Name","Category","Subcategory","Service_Type",
-    "Short_Description","Detailed_Description",
-    "Website","Instagram","Address"
-]
+def login_ui() -> bool:
+    """Return True if authenticated (admin), else False."""
+    # Keep auth in session
+    if "is_admin" not in st.session_state:
+        st.session_state.is_admin = False
 
-SHOWCASE_COLUMNS: List[str] = [
-    "Approved","Title","Description","Media_Type","Image_URL","Video_URL","Uploader","Created_At"
-]
+    if st.session_state.is_admin:
+        return True
 
-# ---------- Google Sheets client ----------
+    with st.expander("Admin login", expanded=False):
+        u = st.text_input("Username", key="u_name", placeholder="Admin username")
+        p = st.text_input("Password", key="p_word", type="password", placeholder="Admin password")
+        if st.button("Sign in", type="primary"):
+            if u.strip() == APP_USERNAME and p == APP_PASSWORD:
+                st.session_state.is_admin = True
+                st.success("Logged in as Admin.")
+            else:
+                st.error("Incorrect username or password.")
+                time.sleep(1)
+    return st.session_state.is_admin
+
+# ------------- Google Sheets connection ------------------------
+
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -134,376 +167,311 @@ SCOPES = [
 def get_gspread_client():
     sa_info = dict(st.secrets["gcp_service_account"])
     creds = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
-    return gspread.authorize(creds), creds
+    return gspread.authorize(creds)
 
-gc, creds = get_gspread_client()
+gc = get_gspread_client()
 
-# ---------- Sheet helpers ----------
-def open_sheet_by_url(url: str):
+# Use the spreadsheet you already shared with the service account
+SHEET_URL = st.secrets.get(
+    "SHEET_URL",
+    # Fallback – paste your Sheet URL here if you prefer hard-coding:
+    "https://docs.google.com/spreadsheets/d/1SWVjrtC8qh9fXFhrcXbc_6cgNS39tc87vvPz1PCaeFY/edit#gid=0",
+)
+
+@st.cache_resource(show_spinner=False)
+def open_spreadsheet(url: str):
+    return gc.open_by_url(url)
+
+def ensure_worksheet(sh, title: str, headers: List[str]) -> gspread.Worksheet:
     try:
-        return gc.open_by_url(url)
-    except SpreadsheetNotFound as e:
-        st.error("Could not open the spreadsheet by URL. Double-check the URL.")
-        st.code(str(e)); st.stop()
-
-def get_or_create_ws(sh, tab_name: str, header: List[str]):
-    names = [ws.title for ws in sh.worksheets()]
-    if tab_name in names:
-        return sh.worksheet(tab_name)
-    ws = sh.add_worksheet(title=tab_name, rows=2000, cols=max(len(header), 20))
-    ws.update([header])
+        ws = sh.worksheet(title)
+    except WorksheetNotFound:
+        ws = sh.add_worksheet(title=title, rows=1000, cols=max(10, len(headers)))
+        ws.append_row(headers)
+    # If empty, put headers
+    values = ws.get_all_values()
+    if not values:
+        ws.append_row(headers)
     return ws
 
-def ws_to_df(ws, header_cols: List[str]) -> pd.DataFrame:
-    rows = ws.get_all_values()
-    if not rows:
-        return pd.DataFrame(columns=header_cols)
-    header, body = rows[0], rows[1:]
-    df = pd.DataFrame(body, columns=header)
-    df = df.replace("", pd.NA).dropna(how="all")
-    for col in header_cols:
-        if col not in df.columns: df[col] = ""
-    return df
+def ws_to_df(ws: gspread.Worksheet) -> pd.DataFrame:
+    vals = ws.get_all_values()
+    if not vals:
+        return pd.DataFrame()
+    if len(vals) == 1:
+        return pd.DataFrame(columns=vals[0])
+    return pd.DataFrame(vals[1:], columns=vals[0])
 
-def append_row(ws, cols: List[str], data: dict):
-    ws.append_row([data.get(c, "") for c in cols], value_input_option="USER_ENTERED")
+def append_row(ws: gspread.Worksheet, row: List[str]):
+    ws.append_row(row)
 
-def approve_row(ws, row_idx: int, col_name="Approved"):
-    header = ws.row_values(1)
-    try:
-        col = header.index(col_name) + 1
-    except ValueError:
-        return
-    ws.update_cell(row_idx, col, "Yes")
+# ------------- Prepare workbook & tabs -------------------------
 
-# ---------- Drive uploader (optional) ----------
-@st.cache_resource(show_spinner=False)
-def get_drive():
-    if not DRIVE_AVAILABLE:
-        return None
-    try:
-        return build("drive", "v3", credentials=creds, cache_discovery=False)
-    except Exception:
-        return None
+try:
+    sh = open_spreadsheet(SHEET_URL)
 
-DRIVE = get_drive()
-SHOWCASE_FOLDER = st.secrets.get("SHOWCASE_DRIVE_FOLDER", "")
+    # Directory
+    DIR_HEADERS = [
+        "Submitted_At","Approved","Phase","Wing","Flat_No","Resident_Name","Email","Phone",
+        "Business_Name","Category","Subcategory","Service_Type",
+        "Short_Description","Detailed_Description"
+    ]
+    ws_dir = ensure_worksheet(sh, "Business_Listings", DIR_HEADERS)
 
-def upload_to_drive(local_path: str, file_name: str) -> Optional[str]:
-    """Uploads to the showcase folder; returns a public file link (view)."""
-    if not DRIVE or not SHOWCASE_FOLDER:
-        return None
-    media = MediaFileUpload(local_path, resumable=False)
-    file_meta = {"name": file_name, "parents": [SHOWCASE_FOLDER]}
-    file = DRIVE.files().create(body=file_meta, media_body=media, fields="id").execute()
-    file_id = file.get("id")
-    # Make it viewable by link
-    try:
-        DRIVE.permissions().create(fileId=file_id, body={"role":"reader", "type":"anyone"}).execute()
-    except Exception:
-        pass
-    return f"https://drive.google.com/uc?id={file_id}"
+    # Vendors (vicinity)
+    VEN_HEADERS = [
+        "Submitted_At","Approved","Vendor_Name","Contact","Phone","Category","Subcategory","Location",
+        "Short_Description","Detailed_Description"
+    ]
+    ws_vendors = ensure_worksheet(sh, "Vicinity_Vendors", VEN_HEADERS)
 
-# ---------- Load sheets ----------
-sh = open_sheet_by_url(SHEET_URL)
-ws_dir = get_or_create_ws(sh, DIRECTORY_SHEET, EXPECTED_COLUMNS)
-ws_vnd = get_or_create_ws(sh, VENDORS_SHEET,   EXPECTED_COLUMNS)
-ws_show = get_or_create_ws(sh, SHOWCASE_SHEET, SHOWCASE_COLUMNS)
+    # Showcase wall (photos/videos marketing)
+    SHOW_HEADERS = [
+        "Submitted_At","Approved","Title","Type","URL","Posted_By","Notes"
+    ]
+    ws_show = ensure_worksheet(sh, "Showcase", SHOW_HEADERS)
 
-df_dir = ws_to_df(ws_dir, EXPECTED_COLUMNS)
-df_vnd = ws_to_df(ws_vnd, EXPECTED_COLUMNS)
-df_show = ws_to_df(ws_show, SHOWCASE_COLUMNS)
+except SpreadsheetNotFound as e:
+    st.error("Could not open the spreadsheet by URL. Check your SHEET_URL secret or share settings.")
+    st.stop()
 
-# ---------- Util ----------
-def nice(s): return (s or "").strip()
+# ------------- Helpers for Drive links (for videos/images) -----
 
-def filter_df(df: pd.DataFrame, phase, cat, svc, q) -> pd.DataFrame:
-    out = df.copy()
-    if phase and phase != "All":
-        out = out[out["Phase"].str.strip().fillna("") == phase]
-    if cat and cat != "All":
-        out = out[out["Category"].str.strip().fillna("") == cat]
-    if svc and svc != "All":
-        out = out[out["Service_Type"].str.strip().fillna("") == svc]
-    if q:
-        pat = re.compile(re.escape(q), re.IGNORECASE)
-        cols = ["Business_Name", "Short_Description", "Detailed_Description", "Resident_Name", "Subcategory", "Address"]
-        mask = pd.Series(False, index=out.index)
-        for c in cols:
-            mask = mask | out[c].astype(str).str.contains(pat, na=False)
-        out = out[mask]
-    return out
+def extract_drive_file_id(url: str) -> str | None:
+    """
+    Returns a file ID from common Google Drive share links.
+    """
+    patterns = [
+        r"https?://drive\.google\.com/file/d/([^/]+)/",    # /file/d/<id>/
+        r"https?://drive\.google\.com/open\?id=([^&]+)",   # open?id=<id>
+        r"https?://drive\.google\.com/uc\?id=([^&]+)",     # uc?id=<id>
+    ]
+    for pat in patterns:
+        m = re.search(pat, url)
+        if m:
+            return m.group(1)
+    return None
 
-def render_cards(df: pd.DataFrame, empty_msg="Nothing yet."):
-    if df.empty:
-        st.info(empty_msg); return
-    cols = st.columns([1,1,1], gap="large")
-    i = 0
-    for _, r in df.iterrows():
-        with cols[i % 3]:
-            st.markdown('<div class="atm-card">', unsafe_allow_html=True)
-            st.markdown(f"<h3>{nice(r.get('Business_Name') or r.get('Title') or 'Untitled')}</h3>", unsafe_allow_html=True)
-            small = []
-            if r.get("Category"): small.append(nice(r["Category"]))
-            if r.get("Service_Type"): small.append(nice(r["Service_Type"]))
-            if r.get("Resident_Name"): small.append(nice(r["Resident_Name"]))
-            if small:
-                st.markdown(f'<div class="atm-small">{" • ".join(small)}</div>', unsafe_allow_html=True)
+def to_direct_image(url: str) -> str:
+    """
+    Try to convert a Drive link to a direct image link (works for images).
+    Otherwise return the URL as-is.
+    """
+    fid = extract_drive_file_id(url)
+    if fid:
+        return f"https://drive.google.com/uc?export=view&id={fid}"
+    return url
 
-            # For Showcase: media
-            if "Media_Type" in r.index:
-                if nice(r["Media_Type"]).lower()=="image" and nice(r["Image_URL"]):
-                    st.image(nice(r["Image_URL"]), use_container_width=True)
-                elif nice(r["Media_Type"]).lower()=="video":
-                    if nice(r["Video_URL"]):
-                        st.video(nice(r["Video_URL"]))
-                if nice(r.get("Description","")):
-                    st.caption(r["Description"])
-            else:
-                if nice(r.get("Short_Description","")):
-                    st.caption(r["Short_Description"])
+def to_drive_preview(url: str) -> str:
+    """
+    Convert to Drive preview (good for iframed video playback).
+    """
+    fid = extract_drive_file_id(url)
+    if fid:
+        return f"https://drive.google.com/file/d/{fid}/preview"
+    return url
 
-            links = []
-            for label, key in [("Website","Website"),("Instagram","Instagram"),("Email","Email"),("Phone","Phone")]:
-                v = nice(r.get(key,""))
-                if not v: continue
-                if label in ("Website","Instagram"):
-                    links.append(f'[{label}]({v})')
-                else:
-                    links.append(f'{label}: {v}')
-            if links: st.markdown(" • ".join(links))
+# ------------- UI: Tabs ---------------------------------------
 
-            st.markdown("</div>", unsafe_allow_html=True)
-        i += 1
+TABS = st.tabs(["📖 Directory", "📝 Submit", "🏪 Vicinity Vendors", "🎞️ Showcase Wall", "🛠️ Admin"])
 
-# ---------- Tabs ----------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Browse Directory", "Submit Listing", "Vicinity Vendors", "Showcase (Free Wall)", "Admin"
-])
+# ----------------- Directory ----------------------------------
+with TABS[0]:
+    st.subheader("Resident Business Listings")
 
-# ── 1) Browse Directory
-with tab1:
-    st.subheader("Browse resident businesses")
-    approved = df_dir[df_dir["Approved"].str.strip().str.lower()=="yes"]
-    phases = ["All"] + sorted([p for p in approved["Phase"].dropna().unique() if p])
-    cats   = ["All"] + sorted([c for c in approved["Category"].dropna().unique() if c])
-    svcs   = ["All"] + sorted([s for s in approved["Service_Type"].dropna().unique() if s])
-
-    c1,c2,c3,c4 = st.columns([1,1,1,2])
-    phase = c1.selectbox("Phase", phases, index=0)
-    cat   = c2.selectbox("Category", cats, index=0)
-    svc   = c3.selectbox("Service Type", svcs, index=0)
-    q     = c4.text_input("Search", placeholder="name, service, keyword...")
-
-    show = filter_df(approved, phase, cat, svc, q)
-    render_cards(show, "No approved listings yet.")
-
-# ── 2) Submit Listing
-with tab2:
-    st.subheader("Submit your business")
-    with st.form("submit_form", clear_on_submit=True):
-        phase = st.selectbox("Phase", ["Atmosphere 1","Atmosphere 2"])
-        wing  = st.selectbox("Wing", list("ABCDEFGHIJ"))
-        flat  = st.text_input("Flat No (e.g., 1203)")
-        rname = st.text_input("Resident Name")
-        phone = st.text_input("Phone")
-        email = st.text_input("Email")
-        c     = st.text_input("Category")
-        sc    = st.text_input("Subcategory")
-        stype = st.text_input("Service Type")
-        bname = st.text_input("Business Name*")
-        short = st.text_area("Short Description (one line)")
-        detail= st.text_area("Detailed Description")
-        web   = st.text_input("Website URL")
-        ig    = st.text_input("Instagram URL")
-        addr  = st.text_area("Address")
-
-        submitted = st.form_submit_button("Submit")
-        if submitted:
-            if not bname.strip():
-                st.warning("Please provide Business Name.")
-            else:
-                payload = {
-                    "Approved":"No","Phase":phase,"Wing":wing,"Flat_No":flat,
-                    "Resident_Name":rname,"Phone":phone,"Email":email,
-                    "Business_Name":bname,"Category":c,"Subcategory":sc,"Service_Type":stype,
-                    "Short_Description":short,"Detailed_Description":detail,
-                    "Website":web,"Instagram":ig,"Address":addr
-                }
-                append_row(ws_dir, EXPECTED_COLUMNS, payload)
-                st.success("Submitted! Your listing will appear after admin approval.")
-
-# ── 3) Vicinity Vendors
-with tab3:
-    st.subheader("Vicinity Vendors (nearby)")
-    approved_v = df_vnd[df_vnd["Approved"].str.strip().str.lower()=="yes"]
-    cats_v = ["All"] + sorted([c for c in approved_v["Category"].dropna().unique() if c])
-    svc_v  = ["All"] + sorted([s for s in approved_v["Service_Type"].dropna().unique() if s])
-    c1,c2,c3 = st.columns([1,1,2])
-    catv = c1.selectbox("Category", cats_v, index=0, key="v_cat")
-    svcv = c2.selectbox("Service Type", svc_v, index=0, key="v_svc")
-    qv   = c3.text_input("Search", key="v_q")
-    show_v = filter_df(approved_v, "All", catv, svcv, qv)
-    render_cards(show_v, "No approved vendors yet.")
-
-    st.divider()
-    with st.expander("Suggest a new vendor"):
-        with st.form("vendor_form", clear_on_submit=True):
-            bname = st.text_input("Vendor / Shop Name*")
-            c     = st.text_input("Category")
-            sc    = st.text_input("Subcategory")
-            stype = st.text_input("Service Type")
-            short = st.text_area("Short Description")
-            contact = st.text_input("Phone / Email")
-            web   = st.text_input("Website URL")
-            ig    = st.text_input("Instagram URL")
-            addr  = st.text_area("Address / Exact location")
-            v_submit = st.form_submit_button("Suggest Vendor")
-            if v_submit:
-                if not bname.strip():
-                    st.warning("Please provide a vendor name.")
-                else:
-                    payload = {
-                        "Approved":"No","Phase":"","Wing":"","Flat_No":"",
-                        "Resident_Name":"","Phone":contact,"Email":"",
-                        "Business_Name":bname,"Category":c,"Subcategory":sc,"Service_Type":stype,
-                        "Short_Description":short,"Detailed_Description":"",
-                        "Website":web,"Instagram":ig,"Address":addr
-                    }
-                    append_row(ws_vnd, EXPECTED_COLUMNS, payload)
-                    st.success("Thank you! Vendor will appear after admin approval.")
-
-# ── 4) Showcase (Free Wall)
-with tab4:
-    st.subheader("Showcase (Free Wall) — images & 10s videos")
-    st.caption("Post product promos here. Paste a link (YouTube / Drive / Instagram) or upload a file.")
-    approved_show = df_show[df_show["Approved"].str.strip().str.lower()=="yes"]
-
-    # Gallery
-    cols = st.columns([1,1,1], gap="large")
-    if approved_show.empty:
-        st.info("No approved showcase posts yet.")
+    df_dir = ws_to_df(ws_dir)
+    if df_dir.empty:
+        st.info("No directory data yet. Add from **Submit** or via **Admin**.")
     else:
-        i = 0
-        for _, r in approved_show.iterrows():
-            with cols[i % 3]:
-                st.markdown('<div class="atm-card">', unsafe_allow_html=True)
-                st.markdown(f"<h3>{nice(r['Title']) or 'Untitled'}</h3>", unsafe_allow_html=True)
-                if nice(r["Media_Type"]).lower()=="image" and nice(r["Image_URL"]):
-                    st.image(nice(r["Image_URL"]), use_container_width=True)
-                elif nice(r["Media_Type"]).lower()=="video" and nice(r["Video_URL"]):
-                    st.video(nice(r["Video_URL"]))
-                if nice(r["Description"]):
-                    st.caption(r["Description"])
-                if nice(r["Uploader"]):
-                    st.caption(f"By: {r['Uploader']}")
-                st.markdown("</div>", unsafe_allow_html=True)
-            i += 1
+        # Filters
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            phase = st.selectbox("Phase", ["All"] + sorted(df_dir["Phase"].dropna().unique().tolist()))
+        with col2:
+            cat = st.selectbox("Category", ["All"] + sorted(df_dir["Category"].dropna().unique().tolist()))
+        with col3:
+            svc = st.selectbox("Service Type", ["All"] + sorted(df_dir["Service_Type"].dropna().unique().tolist()))
+        with col4:
+            txt = st.text_input("Search name or description")
 
-    st.divider()
-    # Submit to showcase
-    with st.expander("Post to Showcase"):
-        c1, c2 = st.columns(2)
-        with c1:
-            title = st.text_input("Title*")
-            mtype = st.selectbox("Media Type", ["Image", "Video"])
-            desc  = st.text_area("Short description")
-            who   = st.text_input("Your name / flat (optional)")
-        with c2:
-            link  = st.text_input("Paste a link (YouTube / Instagram / Google Drive / image URL)")
-            upload = st.file_uploader("Or upload a file (image / mp4 up to ~10s)", type=["png","jpg","jpeg","gif","mp4"])
+        # show only Approved == "Yes"
+        mask = (df_dir["Approved"].str.strip().str.lower() == "yes")
+        if phase != "All":
+            mask &= (df_dir["Phase"] == phase)
+        if cat != "All":
+            mask &= (df_dir["Category"] == cat)
+        if svc != "All":
+            mask &= (df_dir["Service_Type"] == svc)
+        if txt:
+            txt_low = txt.lower()
+            mask &= (
+                df_dir["Business_Name"].str.lower().str.contains(txt_low, na=False) |
+                df_dir["Short_Description"].str.lower().str.contains(txt_low, na=False) |
+                df_dir["Detailed_Description"].str.lower().str.contains(txt_low, na=False)
+            )
 
-        if st.button("Submit to Showcase"):
-            if not title.strip():
-                st.warning("Please add a title.")
-            else:
-                image_url, video_url = "", ""
-                # Prefer uploaded file if provided and Drive configured
-                if upload is not None:
-                    tmp_path = f"/tmp/{upload.name}"
-                    with open(tmp_path, "wb") as f:
-                        f.write(upload.read())
-                    drv_url = upload_to_drive(tmp_path, upload.name)
-                    if drv_url:
-                        if mtype.lower()=="image":
-                            image_url = drv_url
-                        else:
-                            video_url = drv_url
-                    else:
-                        st.info("Upload via Drive not configured; using your pasted link (if any).")
-                # Fallback to pasted link
-                if not image_url and not video_url and link.strip():
-                    if mtype.lower()=="image":
-                        image_url = link.strip()
-                    else:
-                        video_url = link.strip()
-
-                if (mtype.lower()=="image" and not image_url) or (mtype.lower()=="video" and not video_url):
-                    st.warning("Please provide a valid link or enable Drive uploads (see instructions).")
-                else:
-                    payload = {
-                        "Approved":"No",
-                        "Title":title.strip(),
-                        "Description":desc.strip(),
-                        "Media_Type":mtype,
-                        "Image_URL":image_url,
-                        "Video_URL":video_url,
-                        "Uploader":who.strip(),
-                        "Created_At": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                    append_row(ws_show, SHOWCASE_COLUMNS, payload)
-                    st.success("Posted! It will appear once admin approves.")
-
-# ── 5) Admin
-with tab5:
-    st.subheader("Admin")
-    u = st.text_input("Username")
-    p = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if u == st.secrets["APP_USERNAME"] and p == st.secrets["APP_PASSWORD"]:
-            st.session_state["_is_admin"] = True
-            st.success("Welcome, admin!")
-            time.sleep(.5); st.experimental_rerun()
+        view = df_dir[mask].copy()
+        if view.empty:
+            st.warning("No approved listings match your filters.")
         else:
-            st.error("Invalid credentials.")
+            st.dataframe(view, use_container_width=True)
 
-    if st.session_state.get("_is_admin"):
-        st.success("Logged in as admin.")
+# ----------------- Submit -------------------------------------
+with TABS[1]:
+    st.subheader("Submit Your Business")
+
+    with st.form("submit_business"):
         colA, colB, colC = st.columns(3)
-
         with colA:
-            st.markdown("**Resident listings — pending**")
-            pending = df_dir[df_dir["Approved"].str.strip().str.lower()!="yes"]
-            if pending.empty: st.info("None")
-            for idx, r in pending.iterrows():
-                with st.container(border=True):
-                    st.write(f"**{nice(r['Business_Name'])}** — {nice(r['Category'])}/{nice(r['Service_Type'])}")
-                    st.caption(nice(r["Short_Description"]))
-                    if st.button("Approve", key=f"a_dir_{idx}", help="Make visible"):
-                        approve_row(ws_dir, idx + 2)
-                        st.success("Approved."); time.sleep(.3); st.experimental_rerun()
-
+            phase = st.selectbox("Phase", ["Atmosphere 1", "Atmosphere 2"])
+            wing = st.text_input("Wing")
+            flat = st.text_input("Flat No (e.g., 1203)")
         with colB:
-            st.markdown("**Vicinity vendors — pending**")
-            pending_v = df_vnd[df_vnd["Approved"].str.strip().str.lower()!="yes"]
-            if pending_v.empty: st.info("None")
-            for idx, r in pending_v.iterrows():
-                with st.container(border=True):
-                    st.write(f"**{nice(r['Business_Name'])}** — {nice(r['Category'])}/{nice(r['Service_Type'])}")
-                    st.caption(nice(r["Short_Description"]))
-                    if st.button("Approve", key=f"a_v_{idx}"):
-                        approve_row(ws_vnd, idx + 2)
-                        st.success("Approved."); time.sleep(.3); st.experimental_rerun()
-
+            name = st.text_input("Resident Name")
+            email = st.text_input("Email")
+            phone = st.text_input("Phone")
         with colC:
-            st.markdown("**Showcase posts — pending**")
-            pending_s = df_show[df_show["Approved"].str.strip().str.lower()!="yes"]
-            if pending_s.empty: st.info("None")
-            for idx, r in pending_s.iterrows():
-                with st.container(border=True):
-                    st.write(f"**{nice(r['Title'])}** — {nice(r['Media_Type'])}")
-                    st.caption(nice(r["Description"]))
-                    if st.button("Approve", key=f"a_s_{idx}"):
-                        approve_row(ws_show, idx + 2)
-                        st.success("Approved."); time.sleep(.3); st.experimental_rerun()
+            bname = st.text_input("Business Name")
+            category = st.text_input("Category")
+            subcategory = st.text_input("Subcategory")
+
+        svc_type = st.text_input("Service Type")
+        short_d = st.text_area("Short Description", max_chars=120)
+        detail_d = st.text_area("Detailed Description")
+
+        submitted = st.form_submit_button("Send for Approval")
+        if submitted:
+            append_row(ws_dir, [
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+                "No",  # not approved by default
+                phase, wing, flat, name, email, phone,
+                bname, category, subcategory, svc_type, short_d, detail_d
+            ])
+            st.success("Submitted! An admin will review and approve.")
+
+# ----------------- Vicinity Vendors ---------------------------
+with TABS[2]:
+    st.subheader("Vicinity Vendors")
+
+    df_vendors = ws_to_df(ws_vendors)
+    if df_vendors.empty:
+        st.info("No vendors yet.")
+    else:
+        mask = (df_vendors["Approved"].str.strip().str.lower() == "yes")
+        st.dataframe(df_vendors[mask], use_container_width=True)
+
+# ----------------- Showcase Wall ------------------------------
+with TABS[3]:
+    st.subheader("Showcase Wall – Photos & 10s Videos")
+
+    df_show = ws_to_df(ws_show)
+
+    # View Area – only approved
+    if df_show.empty:
+        st.info("Nothing here yet. Admin can post items in the **Admin** tab.")
+    else:
+        approved = df_show[df_show["Approved"].str.strip().str.lower() == "yes"].copy()
+        if approved.empty:
+            st.info("No approved showcase items yet.")
+        else:
+            # Cards
+            st.markdown('<div class="atm-grid cols-3">', unsafe_allow_html=True)
+
+            for _, row in approved.iterrows():
+                title = row.get("Title", "")
+                typ   = (row.get("Type", "") or "").lower()
+                url   = row.get("URL", "")
+                by    = row.get("Posted_By", "")
+                notes = row.get("Notes", "")
+
+                st.markdown('<div class="atm-card">', unsafe_allow_html=True)
+                if "video" in typ:
+                    drive_preview = to_drive_preview(url)
+                    # Use iframe so Drive preview plays reliably
+                    st.components.v1.iframe(drive_preview, height=260, scrolling=False)
+                else:
+                    st.image(to_direct_image(url), use_container_width=True)
+
+                st.markdown(f"**{title}**  \n<span class='small-dim'>by {by}</span>", unsafe_allow_html=True)
+                if notes:
+                    st.caption(notes)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown('</div>', unsafe_allow_html=True)
+
+# ----------------- Admin --------------------------------------
+with TABS[4]:
+    st.subheader("Admin")
+
+    if not login_ui():
+        st.info("Log in above to access admin actions.")
+        st.stop()
+
+    st.success("Admin mode enabled.")
+
+    tabA, tabB = st.tabs(["Approve / Manage", "Post to Showcase"])
+
+    # --- Approvals for Directory & Vendors & Showcase
+    with tabA:
+        st.markdown("### Pending approvals")
+
+        df_dir_full = ws_to_df(ws_dir)
+        df_v_full   = ws_to_df(ws_vendors)
+        df_s_full   = ws_to_df(ws_show)
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("**Business Listings**")
+            if df_dir_full.empty:
+                st.caption("No rows yet.")
+            else:
+                pend = df_dir_full[df_dir_full["Approved"].str.lower() != "yes"]
+                st.dataframe(pend, use_container_width=True, height=280)
+
+        with col2:
+            st.markdown("**Vicinity Vendors**")
+            if df_v_full.empty:
+                st.caption("No rows yet.")
+            else:
+                pend = df_v_full[df_v_full["Approved"].str.lower() != "yes"]
+                st.dataframe(pend, use_container_width=True, height=280)
+
+        with col3:
+            st.markdown("**Showcase**")
+            if df_s_full.empty:
+                st.caption("No rows yet.")
+            else:
+                pend = df_s_full[df_s_full["Approved"].str.lower() != "yes"]
+                st.dataframe(pend, use_container_width=True, height=280)
+
+        st.info("To approve, you can edit the Google Sheet column **Approved** to `Yes`. Refresh the app after saving.")
+
+    # --- Post to Showcase (Admin-only uploader by link)
+    with tabB:
+        st.markdown("### Add a new Showcase item (Admin only)")
+        st.caption("Upload is by sharing a **public link** (e.g., Google Drive or direct https). "
+                   "For Drive, set the file to *Anyone with the link can view*.")
+        with st.form("showcase_add"):
+            title = st.text_input("Title")
+            typ   = st.selectbox("Type", ["Image", "Video (<=10s)"])
+            url   = st.text_input("Public URL (Google Drive or direct https)")
+            notes = st.text_area("Notes (optional)")
+            by    = st.text_input("Posted By", value="Admin")
+
+            submitted = st.form_submit_button("Post to Showcase")
+            if submitted:
+                if not title or not url:
+                    st.error("Title and URL are required.")
+                else:
+                    append_row(ws_show, [
+                        time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "Yes",      # Admin posting => approved
+                        title,
+                        typ.lower(),
+                        url,
+                        by,
+                        notes,
+                    ])
+                    st.success("Posted! It is now visible on the Showcase Wall.")
+
 
