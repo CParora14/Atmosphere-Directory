@@ -1,3 +1,7 @@
+# Atmosphere Society — Community Hub
+# Showcase • Directory • Vendors • Support
+# One-file app – paste over your streamlit_app.py
+
 from __future__ import annotations
 import re, time, uuid, math, datetime as dt
 from typing import List, Tuple
@@ -8,458 +12,562 @@ import gspread
 from gspread.exceptions import SpreadsheetNotFound, WorksheetNotFound
 from google.oauth2.service_account import Credentials
 
-# -------------------- THEME / BRAND --------------------
-PRIMARY   = "#18B8CB"   # Atmosphere blue
-ACCENT    = "#06B6FF"
-INK       = "#0C2AA4"
-CARD_BG   = "rgba(15,34,64,0.65)"  # translucent dark overlay for readability
-TEXT_ON_D = "#ECF7FF"
+# ------------------------------ THEME / BRANDING ------------------------------
+PRIMARY   = "#18B8CB"   # brand teal
+PRIMARY_2 = "#6BC6FF"   # light blue
+INK       = "#0C2AAA"   # deep ink
+CARD_BG   = "#0E1C2B"   # dark card
+PAGE_BG   = "#0A1522"   # darker page
 
-REPO_RAW   = "https://raw.githubusercontent.com/CPArora14/Atmosphere-Directory/main/assets"
-BG_URL     = f"{REPO_RAW}/bg.jpg"
-LOGO_URL   = f"{REPO_RAW}/logo.png"
+LOGO_URL = st.secrets.get("LOGO_URL", "")  # optional: put a public URL in secrets
 
-st.set_page_config(page_title="Atmosphere Society — Community Hub", layout="wide")
+st.set_page_config(
+    page_title="Atmosphere Society — Community Hub",
+    page_icon="🏡",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
 st.markdown(
     f"""
-    <style>
-      [data-testid="stAppViewContainer"] > .main {{
-        background: linear-gradient(0deg, rgba(0,20,40,.65), rgba(0,20,40,.65)),
-                    url('{BG_URL}') center/cover fixed no-repeat;
-      }}
-      [data-testid="stHeader"] {{ background: transparent; }}
-      .stButton > button {{
-        background:{PRIMARY}; color:white; border:0; border-radius:10px; padding:.6rem 1rem;
-      }}
-      .stButton > button:hover {{ filter:brightness(1.08); }}
-      .card {{
-        background:{CARD_BG}; color:{TEXT_ON_D};
-        padding:1rem; border-radius:16px; border:1px solid rgba(255,255,255,.08);
-      }}
-      .pill {{ background:{ACCENT}; color:white; border-radius:999px; padding:.2rem .6rem; font-size:.8rem; }}
-      .star {{ color:#FFD85A; font-size:20px; line-height:1; }}
-    </style>
-    """,
+<style>
+:root {{
+  --brand: {PRIMARY};
+  --brand2:{PRIMARY_2};
+  --ink:   {INK};
+  --card:  {CARD_BG};
+  --page:  {PAGE_BG};
+}}
+html, body, [data-testid="stAppViewContainer"] {{
+  background: var(--page)!important;
+  color: #EAF2FA!important;
+}}
+.block-container {{
+  padding-top: 1.5rem;
+  padding-bottom: 3rem;
+  max-width: 1200px;
+}}
+[data-testid="stHeader"] {{ background: transparent; }}
+.stTabs [data-baseweb="tab"] {{
+  color: #EAF2FA; font-weight: 600;
+}}
+.stTabs [aria-selected="true"] {{
+  background: linear-gradient(90deg, var(--brand), var(--brand2))!important;
+  color: #001018!important;
+  border-radius: 10px;
+}}
+.banner {{
+  width: 100%; padding: 20px 24px; border-radius: 18px;
+  background: linear-gradient(135deg, {PRIMARY} 0%, {PRIMARY_2} 100%);
+  color: #001018; box-shadow: 0 10px 30px rgba(0,0,0,.25);
+}}
+.card {{
+  background: var(--card); border-radius: 16px; padding: 16px 18px;
+  border: 1px solid rgba(255,255,255,.06)
+}}
+.kpi {{ display:flex; gap:16px; flex-wrap:wrap; }}
+.kpi > div {{
+  background: var(--card); border:1px solid rgba(255,255,255,.06);
+  border-radius:14px; padding:14px 16px; min-width: 180px;
+}}
+.badge {{
+  padding: 2px 8px; border-radius: 100px; font-size: 12px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.08);
+}}
+</style>
+""",
     unsafe_allow_html=True,
 )
 
-# -------------------- SAFE RERUN -----------------------
-def _safe_rerun():
-    try:
-        st.rerun()
-    except Exception:
-        try:
-            st.experimental_rerun()
-        except Exception:
-            pass
-
-# -------------------- AUTH (env + admin) ----------------
+# ---------------------------- AUTH: ADMIN (Secrets) ---------------------------
 APP_USERNAME = st.secrets.get("APP_USERNAME", "")
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
-SHEET_URL    = st.secrets.get("SHEET_URL", "")
+
+def _safe_rerun():
+    try: st.rerun()
+    except Exception:
+        try: st.experimental_rerun()
+        except Exception: pass
 
 def is_admin() -> bool:
-    return bool(st.session_state.get("is_admin", False))
+    if "is_admin" not in st.session_state:
+        st.session_state.is_admin = False
+    return st.session_state.is_admin
 
 def admin_login_ui():
     if is_admin():
-        st.success("Admin mode enabled.")
+        with st.sidebar:
+            st.success("Admin mode: ON")
         return
-    with st.expander("🔐 Admin login", expanded=False):
-        u = st.text_input("Username", key="adm_u")
-        p = st.text_input("Password", type="password", key="adm_p")
-        if st.button("Sign in", type="primary"):
-            if u.strip()==APP_USERNAME and p==APP_PASSWORD:
-                st.session_state.is_admin = True
-                st.success("Logged in.")
-                _safe_rerun()
-            else:
-                st.error("Wrong credentials.")
+    with st.sidebar:
+        with st.expander("🔑 Admin Login", expanded=False):
+            u = st.text_input("Username", key="adm_u")
+            p = st.text_input("Password", type="password", key="adm_p")
+            if st.button("Sign in", type="primary", use_container_width=True):
+                if u.strip() == APP_USERNAME and p == APP_PASSWORD:
+                    st.session_state.is_admin = True
+                    st.success("✅ Logged in.")
+                    _safe_rerun()
+                else:
+                    st.error("❌ Wrong credentials.")
 
-# -------------------- GOOGLE SHEETS CLIENT --------------
+# --------------------------- GOOGLE SHEETS CONNECTION -------------------------
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+
 @st.cache_resource(show_spinner=False)
-def get_gc():
+def get_client():
     sa_info = dict(st.secrets["gcp_service_account"])
-    creds   = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+    creds = Credentials.from_service_account_info(sa_info, scopes=SCOPES)
     return gspread.authorize(creds)
 
 def open_sh(url:str):
-    gc = get_gc()
-    try:
-        return gc.open_by_url(url)
-    except SpreadsheetNotFound:
-        st.error("Could not open spreadsheet. Check SHEET_URL in Secrets and sharing.")
-        st.stop()
+    gc = get_client()
+    return gc.open_by_url(url)
 
 def ensure_ws(sh, title:str, headers:List[str]):
+    """Return a worksheet and make sure it exists + has header row."""
     try:
         ws = sh.worksheet(title)
     except WorksheetNotFound:
-        ws = sh.add_worksheet(title=title, rows=1000, cols=len(headers)+10)
-        ws.append_row(headers)
-    # ensure headers present
-    vals = ws.get_all_values()
-    if not vals or vals[0] != headers:
-        ws.clear()
-        ws.append_row(headers)
+        ws = sh.add_worksheet(title=title, rows=2000, cols=max(10,len(headers)))
+    # header
+    vals = ws.row_values(1)
+    if not vals:
+        ws.update("A1", [headers])
     return ws
 
 def ws_to_df(ws) -> pd.DataFrame:
     vals = ws.get_all_values()
     if len(vals) <= 1:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=[])
     return pd.DataFrame(vals[1:], columns=vals[0])
 
-def append_row(ws, row:List[str]):
+def append(ws, row:List[str]):
     ws.append_row(row)
 
-# -------------------- REQUIRED TABS + HEADERS -----------
-MEM_HEADERS = ["Member_ID","Submitted_At","Approved","Resident_Type","Phase","Wing","Flat_No","Name","Email","Phone"]
-DIR_HEADERS = ["Listing_ID","Submitted_At","Approved","Member_Email","Resident_Type","Phase","Wing",
-               "Flat_No","Business_Name","Category","Subcategory","Service_Type",
-               "Short_Description","Detailed_Description","Image_URL_1","Image_URL_2","Image_URL_3",
-               "Duration_Days","Expires_On"]
+# ---------------------------- REQUIRED SHEETS / HEADERS -----------------------
+MEM_HEADERS = [
+    "Member_ID","Submitted_At","Approved","Resident_Type","Phase","Wing","Flat_No","Name","Email","Phone"
+]
+DIR_HEADERS = [
+    "Listing_ID","Submitted_At","Approved","Member_Email",
+    "Resident_Type","Phase","Wing","Flat_No",
+    "Business_Name","Category","Subcategory","Service_Type",
+    "Short_Description","Detailed_Description",
+    "Image_URL_1","Image_URL_2","Image_URL_3",
+    "Duration_Days","Expires_On"
+]
+VEN_HEADERS = [
+    "Vendor_ID","Submitted_At","Approved","Member_Email",
+    "Vendor_Name","Contact","Phone","Address","Category",
+    "Short_Description","Image_URL_1","Image_URL_2","Image_URL_3",
+    "Duration_Days","Expires_On"
+]
+SHOW_HEADERS = [
+    "Show_ID","Submitted_At","Approved","Title","Type","URL","Posted_By","Notes"
+]
+RATE_HEADERS = [
+    "When","Type","Target_ID","Stars","Comment","Rater_Email"
+]
+SUPP_HEADERS = [
+    "Ticket_ID","When","Email","Subject","Message","Status"
+]
 
-VEN_HEADERS = ["Vendor_ID","Submitted_At","Approved","Member_Email","Vendor_Name","Contact","Phone",
-               "Area","Category","Notes","Duration_Days","Expires_On"]
+# ------------------------------ OPEN SPREADSHEET ------------------------------
+SHEET_URL = st.secrets["SHEET_URL"]   # already in your secrets
 
-SHOW_HEADERS = ["Submitted_At","Approved","Title","Type","URL","Posted_By","Notes"]
-RATE_HEADERS = ["When","Listing_ID","Stars","Comment","Rater_Email"]
-SUPP_HEADERS = ["Ticket_ID","When","Email","Subject","Message","Status"]
-
-# -------------------- OPEN SHEET / ENSURE TABS ----------
-sh          = open_sh(SHEET_URL)
-
-ws_members  = ensure_ws(sh,"Members", MEM_HEADERS)
-ws_dir      = ensure_ws(sh,"Business_Listings", DIR_HEADERS)
-ws_ven      = ensure_ws(sh,"Vicinity_Vendors", VEN_HEADERS)
-ws_show     = ensure_ws(sh,"Showcase", SHOW_HEADERS)
-ws_rate     = ensure_ws(sh,"Ratings", RATE_HEADERS)
-ws_supp     = ensure_ws(sh,"Support_Tickets", SUPP_HEADERS)
-
-# -------------------- HEADER ----------------------------
-col_l, col_r = st.columns([1,5], gap="large")
-with col_l:
-    st.image(LOGO_URL, width=140)
-with col_r:
-    st.write("")
-    st.write("")
-    st.markdown(f"<h1 style='color:{TEXT_ON_D};'>Atmosphere Society — Community Hub</h1>", unsafe_allow_html=True)
-    st.markdown(f"<div class='pill'>Showcase • Directory • Vendors • Support</div>", unsafe_allow_html=True)
-
-st.divider()
-
-# -------------------- MEMBER VERIFY ---------------------
-def member_verify_box():
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("✅ Member verification")
-    if st.session_state.get("member_email"):
-        st.write(f"Signed in as **{st.session_state.member_email}**")
-        st.markdown("</div>", unsafe_allow_html=True)
-        return True
-
-    with st.form("member_form", clear_on_submit=False):
-        email = st.text_input("Your Email (will be used for submissions & ratings)")
-        name  = st.text_input("Full Name")
-        phase = st.selectbox("Phase", ["Atmosphere 1","Atmosphere 2","Other"])
-        wing  = st.text_input("Wing (A/B/…)")
-        flat  = st.text_input("Flat No (e.g., 1203)")
-        rtype = st.selectbox("Resident type", ["Resident","Tenant"])
-        phone = st.text_input("Phone")
-        submit = st.form_submit_button("Verify & Save", type="primary")
-    if submit:
-        if not re.match(r".+@.+\..+", email):
-            st.error("Enter a valid email.")
-        else:
-            now = dt.datetime.utcnow().isoformat()
-            row = [str(uuid.uuid4()), now, "TRUE", rtype, phase, wing, flat, name, email, phone]
-            append_row(ws_members, row)
-            st.session_state.member_email = email
-            st.success("Saved. You’re verified.")
-            _safe_rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-    return False
-
-# -------------------- DIRECTORY (Resident Business) -----
-def directory_tab():
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Resident Business Directory")
-
-    df_all = ws_to_df(ws_dir)
-    if df_all.empty:
-        st.info("No businesses yet. Submit yours below.")
-    else:
-        # show only approved & not expired
-        today = dt.date.today()
-        def still_ok(row):
-            try:
-                eo = dt.date.fromisoformat(row["Expires_On"])
-                return (row["Approved"]=="TRUE") and (eo >= today)
-            except Exception:
-                return (row["Approved"]=="TRUE")
-        mask = df_all.apply(still_ok, axis=1)
-        df = df_all[mask].copy()
-
-        # pick one business to see details + rate
-        names = df["Business_Name"].tolist() if "Business_Name" in df else []
-        if names:
-            pick = st.selectbox("Browse businesses:", names, index=0)
-            sel  = df[df["Business_Name"]==pick].iloc[0]
-            st.write(f"**Category**: {sel['Category']} / {sel['Subcategory']}")
-            st.write(f"**Service Type**: {sel['Service_Type']}")
-            st.write(f"**Short**: {sel['Short_Description']}")
-            with st.expander("More details"):
-                st.write(sel.get("Detailed_Description",""))
-                cols = st.columns(3)
-                for i, col in enumerate(cols, start=1):
-                    url = sel.get(f"Image_URL_{i}","").strip()
-                    if url:
-                        with col: st.image(url, use_column_width=True)
-
-            # ---- Rating block
-            st.markdown("---")
-            st.write("### Rate this business")
-            if not st.session_state.get("member_email"):
-                st.info("Sign in as a verified member (top) to rate.")
-            else:
-                stars = st.radio("Stars", [1,2,3,4,5], horizontal=True, index=4)
-                comment = st.text_area("Optional comment")
-                if st.button("Submit rating", key="rate_btn"):
-                    row = [dt.datetime.utcnow().isoformat(), sel["Listing_ID"], str(stars), comment, st.session_state.member_email]
-                    append_row(ws_rate, row)
-                    st.success("Thanks! Your rating was recorded.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Submit a business")
-    if not st.session_state.get("member_email"):
-        st.info("Please verify your email above to submit.")
-    else:
-        with st.form("dir_submit"):
-            business = st.text_input("Business Name *")
-            category = st.text_input("Category * (e.g., Food & Beverages)")
-            subcat   = st.text_input("Subcategory (e.g., Caterers)")
-            service  = st.text_input("Service Type (e.g., Home delivery)")
-            short    = st.text_area("Short Description *", max_chars=160)
-            detail   = st.text_area("Detailed Description")
-            img1     = st.text_input("Image URL 1 (public link)")
-            img2     = st.text_input("Image URL 2")
-            img3     = st.text_input("Image URL 3")
-            duration = st.selectbox("Listing Duration", [7,15,30,45,60,90], index=2)
-
-            submit = st.form_submit_button("Send for approval", type="primary")
-
-        if submit:
-            lid = str(uuid.uuid4())
-            now = dt.datetime.utcnow()
-            expires = (now + dt.timedelta(days=int(duration))).date().isoformat()
-            member = st.session_state.member_email
-
-            # fetch member info if exists
-            mdf = ws_to_df(ws_members)
-            rowm = mdf[mdf["Email"]==member].iloc[0] if not mdf.empty and (mdf["Email"]==member).any() else None
-            rtype = rowm["Resident_Type"] if rowm is not None else ""
-            phase = rowm["Phase"] if rowm is not None else ""
-            wing  = rowm["Wing"] if rowm is not None else ""
-            flat  = rowm["Flat_No"] if rowm is not None else ""
-
-            row = [lid, now.isoformat(), "FALSE", member, rtype, phase, wing, flat, business, category, subcat,
-                   service, short, detail, img1, img2, img3, str(duration), expires]
-            append_row(ws_dir, row)
-            st.success("Submitted. Admin will review and approve.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# -------------------- VICINITY VENDORS ------------------
-def vendors_tab():
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Vicinity Vendors")
-
-    df_all = ws_to_df(ws_ven)
-    if not df_all.empty:
-        df = df_all[(df_all["Approved"]=="TRUE")]
-        with st.expander("Browse approved vendors", expanded=True):
-            st.dataframe(df[["Vendor_Name","Area","Category","Phone","Notes"]], use_container_width=True)
-    else:
-        st.info("No vendors yet.")
-
-    st.markdown("---")
-    st.write("### Suggest a vendor")
-    if not st.session_state.get("member_email"):
-        st.info("Sign in as a verified member (email) in the header before submitting.")
-    else:
-        with st.form("vendor_form"):
-            name  = st.text_input("Vendor Name *")
-            area  = st.text_input("Area / Market *")
-            phone = st.text_input("Phone")
-            cat   = st.text_input("Category")
-            notes = st.text_area("Notes")
-            duration = st.selectbox("Keep visible for", [7,15,30,45,60,90], index=2)
-            submit = st.form_submit_button("Send to Admin", type="primary")
-        if submit:
-            vid = str(uuid.uuid4())
-            now = dt.datetime.utcnow()
-            expires = (now + dt.timedelta(days=int(duration))).date().isoformat()
-            row = [vid, now.isoformat(), "FALSE", st.session_state.member_email, name, "", phone, area, cat, notes, str(duration), expires]
-            append_row(ws_ven, row)
-            st.success("Submitted. Admin will approve.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# -------------------- SHOWCASE WALL ---------------------
-def showcase_tab():
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Showcase Wall")
-
-    df = ws_to_df(ws_show)
-    df = df[(df["Approved"]=="TRUE")] if not df.empty else df
-    if df.empty:
-        st.info("No showcase items yet.")
-    else:
-        cols = st.columns(3)
-        for i, (_,r) in enumerate(df.iterrows()):
-            with cols[i%3]:
-                st.markdown(f"**{r['Title']}**")
-                st.write(r["Type"])
-                if r["URL"].startswith(("http://","https://")):
-                    st.link_button("Open", r["URL"])
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if is_admin():
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.write("### Add to Showcase (Admin)")
-        with st.form("show_form"):
-            title = st.text_input("Title *")
-            typ   = st.selectbox("Type", ["Image","YouTube","Link"])
-            url   = st.text_input("Public URL *")
-            notes = st.text_input("Notes")
-            submit = st.form_submit_button("Add", type="primary")
-        if submit:
-            now = dt.datetime.utcnow().isoformat()
-            row = [now, "TRUE", title, typ, url, APP_USERNAME, notes]
-            append_row(ws_show, row)
-            st.success("Added to wall.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-# -------------------- SUPPORT TICKETS -------------------
-def support_tab():
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Support")
-    st.caption("Replies may take 7–15 days.")
-
-    with st.form("support"):
-        email = st.text_input("Your Email")
-        subject = st.text_input("Subject")
-        msg = st.text_area("Message")
-        submit = st.form_submit_button("Create Ticket", type="primary")
-    if submit:
-        tid = str(uuid.uuid4())
-        row = [tid, dt.datetime.utcnow().isoformat(), email, subject, msg, "OPEN"]
-        append_row(ws_supp, row)
-        st.success("Ticket submitted.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# -------------------- ADMIN PANEL -----------------------
-def admin_tab():
-    admin_login_ui()
-    if not is_admin():
+with st.spinner("Connecting to Google Sheets…"):
+    try:
+        sh = open_sh(SHEET_URL)
+    except Exception as e:
+        st.error("Could not open spreadsheet. Check SHEET_URL and sharing to service account.")
         st.stop()
 
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Approvals & Exports")
+ws_members  = ensure_ws(sh, "Members",          MEM_HEADERS)
+ws_dir      = ensure_ws(sh, "Business_Listings", DIR_HEADERS)
+ws_ven      = ensure_ws(sh, "Vicinity_Vendors",  VEN_HEADERS)
+ws_show     = ensure_ws(sh, "Showcase",          SHOW_HEADERS)
+ws_rate     = ensure_ws(sh, "Ratings",           RATE_HEADERS)
+ws_supp     = ensure_ws(sh, "Support_Tickets",   SUPP_HEADERS)
 
-    # ---- Members
-    st.write("#### Members (view only)")
-    mdf = ws_to_df(ws_members)
-    st.dataframe(mdf, use_container_width=True, height=250)
+# ------------------------------- HELPERS --------------------------------------
+def now_str():
+    return dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-    # ---- Business approvals
-    st.write("#### Business Listings — Pending")
-    ddf = ws_to_df(ws_dir)
-    pend = ddf[(ddf["Approved"]!="TRUE")] if not ddf.empty else ddf
-    if pend.empty:
-        st.info("Nothing pending.")
+def today():
+    return dt.date.today()
+
+def add_days(d:dt.date, n:int) -> dt.date:
+    return d + dt.timedelta(days=n)
+
+def as_bool(x:str) -> bool:
+    return str(x).strip().lower() in ("true","1","yes","y")
+
+def member_lookup(email:str) -> dict | None:
+    df = ws_to_df(ws_members)
+    if df.empty: return None
+    m = df[df["Email"].str.strip().str.lower() == email.strip().lower()]
+    if m.empty: return None
+    return m.iloc[0].to_dict()
+
+def member_is_approved(email:str) -> bool:
+    m = member_lookup(email)
+    if not m: return False
+    return as_bool(m.get("Approved",""))
+
+def save_member(data:dict):
+    rid = uuid.uuid4().hex[:10].upper()
+    append(ws_members, [
+        rid, now_str(), "FALSE",
+        data["Resident_Type"], data["Phase"], data["Wing"], data["Flat_No"],
+        data["Name"], data["Email"], data["Phone"]
+    ])
+
+def save_directory(data:dict):
+    lid = uuid.uuid4().hex[:10].upper()
+    expires = add_days(today(), int(data["Duration_Days"]))
+    append(ws_dir, [
+        lid, now_str(), "FALSE", data["Member_Email"],
+        data["Resident_Type"], data["Phase"], data["Wing"], data["Flat_No"],
+        data["Business_Name"], data["Category"], data["Subcategory"], data["Service_Type"],
+        data["Short_Description"], data["Detailed_Description"],
+        data["Image_URL_1"], data["Image_URL_2"], data["Image_URL_3"],
+        str(data["Duration_Days"]), str(expires)
+    ])
+
+def save_vendor(data:dict):
+    vid = uuid.uuid4().hex[:10].upper()
+    expires = add_days(today(), int(data["Duration_Days"]))
+    append(ws_ven, [
+        vid, now_str(), "FALSE", data["Member_Email"],
+        data["Vendor_Name"], data["Contact"], data["Phone"], data["Address"], data["Category"],
+        data["Short_Description"],
+        data["Image_URL_1"], data["Image_URL_2"], data["Image_URL_3"],
+        str(data["Duration_Days"]), str(expires)
+    ])
+
+def save_showcase(data:dict, approve:bool=False):
+    sid = uuid.uuid4().hex[:10].upper()
+    append(ws_show, [
+        sid, now_str(), "TRUE" if approve else "FALSE",
+        data["Title"], data["Type"], data["URL"], data.get("Posted_By",""), data.get("Notes","")
+    ])
+
+def save_rating(target_type:str, target_id:str, stars:int, comment:str, email:str):
+    append(ws_rate, [now_str(), target_type, target_id, str(stars), comment, email])
+
+def save_ticket(email:str, sub:str, msg:str):
+    append(ws_supp, [uuid.uuid4().hex[:10].upper(), now_str(), email, sub, msg, "Open"])
+
+def df_public(df:pd.DataFrame, approved_col="Approved", expires_col="Expires_On"):
+    if df.empty: return df
+    out = df.copy()
+    if approved_col in out.columns:
+        out = out[out[approved_col].str.upper()=="TRUE"]
+    if expires_col in out.columns:
+        try:
+            out["_exp"] = pd.to_datetime(out[expires_col], errors="coerce").dt.date
+            out = out[(out["_exp"].isna()) | (out["_exp"] >= today())]
+            out = out.drop(columns=["_exp"])
+        except Exception:
+            pass
+    return out
+
+# ------------------------------- UI HEAD --------------------------------------
+def header():
+    cols = st.columns([1,10])
+    with cols[0]:
+        if LOGO_URL:
+            st.image(LOGO_URL, use_container_width=True)
+        else:
+            st.markdown("<div class='badge'>Atmosphere</div>", unsafe_allow_html=True)
+    with cols[1]:
+        st.markdown(
+            f"<div class='banner'><h2 style='margin:0'>Atmosphere Society — Community Hub</h2>"
+            f"<div>Showcase • Directory • Vendors • Support</div></div>",
+            unsafe_allow_html=True
+        )
+
+header()
+admin_login_ui()
+
+# ----------------------------- TABS (NAV) -------------------------------------
+tabs = st.tabs(["🏠 Showcase", "ℹ️ About", "📇 Directory", "🛒 Vicinity Vendors", "📝 Support", "🧑‍🤝‍🧑 Register", "🛠️ Admin"])
+
+# ------------------------------ SHOWCASE --------------------------------------
+with tabs[0]:
+    st.subheader("Showcase Wall")
+    s = df_public(ws_to_df(ws_show), approved_col="Approved", expires_col=None)
+    if s.empty:
+        st.info("No items yet. Admin can add in the Admin tab.")
     else:
-        for _, r in pend.iterrows():
-            with st.expander(f"{r['Business_Name']} — {r['Member_Email']}"):
-                st.write(r.to_dict())
-                c1,c2,c3 = st.columns(3)
-                with c1:
-                    if st.button("Approve", key=f"ap_{r['Listing_ID']}"):
-                        ws_dir.update_cell(int(_)+2, ddf.columns.get_loc("Approved")+1, "TRUE")  # fallback if index unknown
-                        st.success("Approved.")
-                        _safe_rerun()
-                with c2:
-                    if st.button("Reject", key=f"rej_{r['Listing_ID']}"):
-                        ws_dir.update_cell(int(_)+2, ddf.columns.get_loc("Approved")+1, "REJECTED")
-                        st.warning("Rejected.")
-                        _safe_rerun()
-                with c3:
-                    ext = st.number_input("Extend days", 0, 365, 0, key=f"ex_{r['Listing_ID']}")
-                    if st.button("Apply extension", key=f"exbtn_{r['Listing_ID']}"):
-                        try:
-                            eo = dt.date.fromisoformat(r["Expires_On"])
-                            eo2 = (eo + dt.timedelta(days=int(ext))).isoformat()
-                            ws_dir.update_cell(int(_)+2, ddf.columns.get_loc("Expires_On")+1, eo2)
-                            st.success("Extended.")
-                        except Exception:
-                            st.error("Invalid Expires_On date.")
+        for _, r in s.sort_values("Submitted_At", ascending=False).iterrows():
+            with st.container(border=True):
+                st.markdown(f"**{r.get('Title','')}**  ·  <span class='badge'>{r.get('Type','')}</span>", unsafe_allow_html=True)
+                url = r.get("URL","").strip()
+                if r.get("Type","").lower()=="video":
+                    st.video(url)
+                else:
+                    st.image(url, use_container_width=True, caption=r.get("Notes",""))
 
-    # ---- Vendor approvals
-    st.write("#### Vendors — Pending")
-    vdf = ws_to_df(ws_ven)
-    vpend = vdf[(vdf["Approved"]!="TRUE")] if not vdf.empty else vdf
-    if vpend.empty:
-        st.info("Nothing pending.")
+# -------------------------------- ABOUT ---------------------------------------
+with tabs[1]:
+    st.subheader("About the App")
+    st.markdown("""
+**What is this?**  
+A simple, community-first hub for *Atmosphere Society* residents & tenants.
+
+**What you can do**
+- Browse the **Directory** of resident-run businesses (approved).
+- Suggest **Vicinity Vendors** that help the community.
+- See the **Showcase** wall for ads/promotions (admin-posted).
+- Submit a **Support Ticket** if you need help.
+
+**How listings work**
+- When you submit a business/vendor, it goes to **Admin Approval**.
+- You can select a listing period: **7/15/30/45/60/90 days**.
+- Expired listings stop showing automatically. Admin can extend.
+""")
+
+# ------------------------------- DIRECTORY ------------------------------------
+with tabs[2]:
+    st.subheader("Resident Business Directory")
+
+    # member quick sign-in (email)
+    with st.expander("Member quick sign-in (for submissions & rating)"):
+        me = st.text_input("Your Email", key="me_email").strip()
+        if st.button("Set as me", key="me_set"):
+            if member_is_approved(me):
+                st.session_state.me = me
+                st.success("You’re set as a verified member.")
+            else:
+                st.warning("Not found or not approved yet. Register or wait for approval.")
+
+    df = df_public(ws_to_df(ws_dir))
+    if df.empty:
+        st.info("No approved listings yet.")
     else:
-        for _, r in vpend.iterrows():
-            with st.expander(f"{r['Vendor_Name']} — {r['Member_Email']}"):
-                st.write(r.to_dict())
-                c1,c2 = st.columns(2)
-                with c1:
-                    if st.button("Approve", key=f"vap_{r['Vendor_ID']}"):
-                        ws_ven.update_cell(int(_)+2, vdf.columns.get_loc("Approved")+1, "TRUE")
-                        st.success("Approved.")
-                        _safe_rerun()
-                with c2:
-                    if st.button("Reject", key=f"vrej_{r['Vendor_ID']}"):
-                        ws_ven.update_cell(int(_)+2, vdf.columns.get_loc("Approved")+1, "REJECTED")
-                        st.warning("Rejected.")
-                        _safe_rerun()
+        # filters
+        filt_cols = st.columns(5)
+        with filt_cols[0]:
+            f_phase = st.selectbox("Phase", ["All"] + sorted(df["Phase"].dropna().unique().tolist()))
+        with filt_cols[1]:
+            f_cat = st.selectbox("Category", ["All"] + sorted(df["Category"].dropna().unique().tolist()))
+        with filt_cols[2]:
+            f_srv = st.selectbox("Service Type", ["All"] + sorted(df["Service_Type"].dropna().unique().tolist()))
+        with filt_cols[3]:
+            f_wing = st.selectbox("Wing", ["All"] + sorted(df["Wing"].dropna().unique().tolist()))
+        with filt_cols[4]:
+            q = st.text_input("Search")
+
+        view = df.copy()
+        def fapply(val, choice): 
+            return (choice=="All") or (str(val).strip()==choice)
+        if f_phase!="All": view = view[view["Phase"]==f_phase]
+        if f_cat!="All":   view = view[view["Category"]==f_cat]
+        if f_srv!="All":   view = view[view["Service_Type"]==f_srv]
+        if f_wing!="All":  view = view[view["Wing"]==f_wing]
+        if q:              view = view[view.apply(lambda r: q.lower() in (" ".join(map(str,r.values))).lower(), axis=1)]
+
+        st.dataframe(view[[
+            "Business_Name","Category","Subcategory","Service_Type",
+            "Short_Description","Phase","Wing","Flat_No","Resident_Type","Expires_On"
+        ]], use_container_width=True)
 
     st.markdown("---")
-    st.write("#### Export CSV")
-    col1,col2,col3 = st.columns(3)
-    with col1:
-        st.download_button("Businesses.csv", ddf.to_csv(index=False).encode(), "businesses.csv")
-    with col2:
-        st.download_button("Vendors.csv", vdf.to_csv(index=False).encode(), "vendors.csv")
-    with col3:
-        st.download_button("Members.csv", mdf.to_csv(index=False).encode(), "members.csv")
+    st.markdown("### Submit your business")
+    if "me" not in st.session_state:
+        st.info("Sign in as a verified member (email) above to submit.")
+    else:
+        with st.form("dir_submit"):
+            c1,c2,c3 = st.columns(3)
+            with c1:
+                phase = st.selectbox("Phase", ["Atmosphere 1", "Atmosphere 2"])
+                wing  = st.selectbox("Wing", list("ABCDEFGH"))
+                flat  = st.text_input("Flat No (e.g., 1203)")
+            with c2:
+                resident_type = st.selectbox("Resident Type", ["Resident","Tenant"])
+                category = st.text_input("Category")
+                subcategory = st.text_input("Subcategory")
+            with c3:
+                service = st.text_input("Service Type")
+                duration = st.selectbox("Listing duration (days)", [7,15,30,45,60,90])
 
-    st.markdown("</div>", unsafe_allow_html=True)
+            b_name = st.text_input("Business Name *")
+            short  = st.text_area("Short Description *", max_chars=200)
+            detail = st.text_area("Detailed Description", max_chars=1000)
+            i1,i2,i3 = st.columns(3)
+            with i1: u1 = st.text_input("Image URL 1")
+            with i2: u2 = st.text_input("Image URL 2")
+            with i3: u3 = st.text_input("Image URL 3")
+            ok = st.form_submit_button("Submit for approval", type="primary")
+            if ok:
+                data = dict(
+                    Member_Email=st.session_state.me, Resident_Type=resident_type,
+                    Phase=phase, Wing=wing, Flat_No=flat,
+                    Business_Name=b_name, Category=category, Subcategory=subcategory,
+                    Service_Type=service, Short_Description=short, Detailed_Description=detail,
+                    Image_URL_1=u1, Image_URL_2=u2, Image_URL_3=u3, Duration_Days=int(duration)
+                )
+                save_directory(data)
+                st.success("Submitted! Admin will review & approve.")
 
-# -------------------- MAIN ------------------------------
-# 1) Member verify box appears on every page (top)
-member_verify_box()
+# --------------------------- VICINITY VENDORS ---------------------------------
+with tabs[3]:
+    st.subheader("Vicinity Vendors")
+    vdf = df_public(ws_to_df(ws_ven))
+    if vdf.empty:
+        st.info("No approved vendors yet.")
+    else:
+        st.dataframe(vdf[[
+            "Vendor_Name","Category","Short_Description","Contact","Phone","Address","Expires_On"
+        ]], use_container_width=True)
 
-tab_show, tab_dir, tab_ven, tab_sup, tab_admin = st.tabs(
-    ["📣 Showcase Wall", "🏪 Directory (Residents)", "🧭 Vicinity Vendors", "🛟 Support", "🛠 Admin"]
-)
+    st.markdown("---")
+    st.markdown("### Suggest a vendor")
+    if "me" not in st.session_state:
+        st.info("Sign in as a verified member (email) in Directory tab before submitting.")
+    else:
+        with st.form("ven_submit"):
+            c1,c2 = st.columns(2)
+            with c1:
+                vname = st.text_input("Vendor Name *")
+                vcat  = st.text_input("Category")
+                vcontact = st.text_input("Contact person")
+            with c2:
+                vphone = st.text_input("Phone")
+                vaddr  = st.text_input("Address")
+                vdur   = st.selectbox("Listing duration (days)", [7,15,30,45,60,90])
+            vshort = st.text_area("Short Description *", max_chars=300)
+            i1,i2,i3 = st.columns(3)
+            with i1: vu1 = st.text_input("Image URL 1")
+            with i2: vu2 = st.text_input("Image URL 2")
+            with i3: vu3 = st.text_input("Image URL 3")
+            ok = st.form_submit_button("Submit vendor", type="primary")
+            if ok:
+                save_vendor(dict(
+                    Member_Email=st.session_state.me,
+                    Vendor_Name=vname, Category=vcat, Contact=vcontact,
+                    Phone=vphone, Address=vaddr, Short_Description=vshort,
+                    Image_URL_1=vu1, Image_URL_2=vu2, Image_URL_3=vu3,
+                    Duration_Days=int(vdur)
+                ))
+                st.success("Submitted! Admin will review & approve.")
 
-with tab_show:
-    showcase_tab()
-with tab_dir:
-    directory_tab()
-with tab_ven:
-    vendors_tab()
-with tab_sup:
-    support_tab()
-with tab_admin:
-    admin_tab()
+# -------------------------------- SUPPORT -------------------------------------
+with tabs[4]:
+    st.subheader("Support")
+    st.caption("Replies may take 7–15 days.")
+    with st.form("supp"):
+        em = st.text_input("Your Email")
+        sub = st.text_input("Subject")
+        msg = st.text_area("Message", height=120)
+        ok = st.form_submit_button("Create Ticket", type="primary")
+        if ok:
+            save_ticket(em, sub, msg)
+            st.success("Thanks! Ticket submitted.")
+
+# ------------------------------ REGISTER --------------------------------------
+with tabs[5]:
+    st.subheader("Register as Resident or Tenant")
+    with st.form("reg"):
+        c1,c2,c3 = st.columns(3)
+        with c1:
+            rtype = st.selectbox("Resident Type", ["Resident","Tenant"])
+            phase = st.selectbox("Phase", ["Atmosphere 1","Atmosphere 2"])
+            wing  = st.selectbox("Wing", list("ABCDEFGH"))
+        with c2:
+            flat  = st.text_input("Flat No (e.g., 1203)")
+            name  = st.text_input("Full Name")
+            email = st.text_input("Email")
+        with c3:
+            phone = st.text_input("Phone")
+        ok = st.form_submit_button("Register", type="primary")
+        if ok:
+            save_member(dict(
+                Resident_Type=rtype, Phase=phase, Wing=wing, Flat_No=flat,
+                Name=name, Email=email, Phone=phone
+            ))
+            st.success("Registered! Wait for admin approval.")
+
+# -------------------------------- ADMIN ---------------------------------------
+with tabs[6]:
+    if not is_admin():
+        st.warning("Admin only.")
+    else:
+        st.subheader("Admin Panel")
+
+        # quick add to Showcase
+        with st.expander("Add Showcase (image/video)"):
+            t = st.text_input("Title")
+            typ = st.selectbox("Type", ["image","video"])
+            url = st.text_input("URL (image link or video link)")
+            by  = st.text_input("Posted by")
+            notes = st.text_area("Notes")
+            approve = st.checkbox("Approve now?", value=True)
+            if st.button("Add to Showcase", type="primary"):
+                save_showcase(dict(Title=t, Type=typ, URL=url, Posted_By=by, Notes=notes), approve=approve)
+                st.success("Added to Showcase.")
+
+        # approvals
+        st.markdown("### Approvals")
+
+        members_df = ws_to_df(ws_members)
+        dir_df     = ws_to_df(ws_dir)
+        ven_df     = ws_to_df(ws_ven)
+        show_df    = ws_to_df(ws_show)
+
+        def bool_select(s): return st.radio("", ["FALSE","TRUE"], horizontal=True, index=0 if str(s).upper()!="TRUE" else 1)
+
+        # Members
+        with st.expander("Members"):
+            if members_df.empty:
+                st.info("No members.")
+            else:
+                pending = members_df[members_df["Approved"].str.upper()!="TRUE"]
+                st.write("Pending:", len(pending))
+                st.dataframe(members_df, use_container_width=True)
+                # Download
+                st.download_button("Download Members CSV",
+                                   members_df.to_csv(index=False).encode(),
+                                   "members.csv", "text/csv")
+
+        # Directory
+        with st.expander("Business Listings"):
+            if dir_df.empty:
+                st.info("No listings.")
+            else:
+                st.dataframe(dir_df, use_container_width=True)
+                expiring = dir_df[pd.to_datetime(dir_df["Expires_On"], errors="coerce").dt.date <= add_days(today(), 7)]
+                if not expiring.empty:
+                    st.warning(f"Expiring soon: {len(expiring)}")
+                    st.dataframe(expiring[["Business_Name","Expires_On","Member_Email"]], use_container_width=True)
+                st.download_button("Download Listings CSV",
+                                   dir_df.to_csv(index=False).encode(),
+                                   "business_listings.csv", "text/csv")
+
+        # Vendors
+        with st.expander("Vicinity Vendors"):
+            if ven_df.empty:
+                st.info("No vendors.")
+            else:
+                st.dataframe(ven_df, use_container_width=True)
+                st.download_button("Download Vendors CSV",
+                                   ven_df.to_csv(index=False).encode(),
+                                   "vendors.csv", "text/csv")
+
+        # Showcase table + approvals
+        with st.expander("Showcase table"):
+            if show_df.empty:
+                st.info("No showcase entries.")
+            else:
+                st.dataframe(show_df, use_container_width=True)
+
+        st.caption("Use Google Sheets to flip **Approved** to TRUE / extend **Expires_On**. Changes show instantly.")
 
 
 
