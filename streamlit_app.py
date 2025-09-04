@@ -7,7 +7,15 @@ import streamlit as st
 import gspread
 from gspread.exceptions import SpreadsheetNotFound, WorksheetNotFound
 from google.oauth2.service_account import Credentials
-
+# Safe rerun helper (works with new + old Streamlit)
+def _safe_rerun():
+    try:
+        st.rerun()
+    except Exception:
+        try:
+            st.experimental_rerun()
+        except Exception:
+            pass
 # =========================== BRANDING ===========================
 PRIMARY   = "#1B8CD8"
 PRIMARY_2 = "#6BC6FF"
