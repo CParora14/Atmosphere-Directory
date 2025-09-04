@@ -116,7 +116,8 @@ except SpreadsheetNotFound:
     st.stop()
 
 # ---------- Ensure required sheets (auto-create if missing) ----
-MEM_HEADERS = ["Member_ID","Submitted_At","Approved","Resident_Type","Phase","Wing","Flat_No","Name","Email","Phone"]
+MEM_HEADERS = ["Created_At","Phase","Wing","Flat_No","Full_Name","Email",
+ "Phone","Is_Tenant","Approved","Admin_Notes"]
 DIR_HEADERS = ["Listing_ID","Submitted_At","Approved","Member_Email","Resident_Type","Phase","Wing","Flat_No","Business_Name","Category","Subcategory",
                "Service_Type","Short_Description","Detailed_Description","Image_URL_1","Image_URL_2","Image_URL_3",
                "Duration_Days","Expires_On"]
