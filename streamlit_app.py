@@ -61,25 +61,20 @@ with c2:
 APP_USERNAME = st.secrets.get("APP_USERNAME", "")
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
 
-def is_admin() -> bool:
-    if "is_admin" not in st.session_state: st.session_state.is_admin = False
-    return st.session_state.is_admin
-
 def admin_login_ui():
-    if is_admin(): 
+    if is_admin():
         st.success("Admin mode enabled.")
         return
-    with st.expander("Admin login", expanded=False):
+    with st.expander("🔑 Admin Login", expanded=False):
         u = st.text_input("Username", key="adm_u")
         p = st.text_input("Password", type="password", key="adm_p")
         if st.button("Sign in", type="primary"):
-            if u.strip()==APP_USERNAME and p==APP_PASSWORD:
+            if u.strip() == APP_USERNAME and p == APP_PASSWORD:
                 st.session_state.is_admin = True
-                st.success("Logged in.")
-                st.experimental_rerun()
+                st.success("✅ Logged in.")
+                _safe_rerun()  # safe helper
             else:
-                st.error("Wrong credentials.")
-
+                st.error("❌ Wrong credentials.")
 # ====================== GOOGLE SHEETS CLIENT ====================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
