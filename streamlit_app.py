@@ -85,10 +85,22 @@ APP_USERNAME = st.secrets.get("APP_USERNAME", "")
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
 
 def _safe_rerun():
-    try: st.rerun()
-    except Exception:
-        try: st.experimental_rerun()
-        except Exception: pass
+    def admin_login_ui():
+    if is_admin():
+        st.success("Admin mode enabled.")
+        return
+
+    with st.expander("🔐 Admin login", expanded=False):
+        u = st.text_input("Username", key="adm_user")
+        p = st.text_input("Password", type="password", key="adm_pass")
+        if st.button("Sign in", key="adm_signin"):
+            if u.strip() == APP_USERNAME and p == APP_PASSWORD:
+                st.session_state.is_admin = True
+                st.success("✅ Logged in.")
+                _safe_rerun()
+            else:
+                st.error("❌ Wrong credentials.")
+
 
 def is_admin() -> bool:
     if "is_admin" not in st.session_state:
