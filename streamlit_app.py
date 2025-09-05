@@ -81,13 +81,30 @@ html, body, [data-testid="stAppViewContainer"] {{
 )
 
 # ---------------------------- AUTH: ADMIN (Secrets) ---------------------------
+# ------------------------------ AUTH / ADMIN ------------------------------
 APP_USERNAME = st.secrets.get("APP_USERNAME", "")
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
 
+# Safe rerun helper (works with new + old Streamlit)
 def _safe_rerun():
-    def admin_login_ui():
+    try:
+        st.rerun()
+    except Exception:
+        try:
+            st.experimental_rerun()
+        except Exception:
+            pass
+
+# Check if current session is admin
+def is_admin() -> bool:
+    if "is_admin" not in st.session_state:
+        st.session_state.is_admin = False
+    return st.session_state.is_admin
+
+# Admin login UI
+def admin_login_ui():
     if is_admin():
-        st.success("Admin mode enabled.")
+        st.success("✅ Admin mode enabled.")
         return
 
     with st.expander("🔐 Admin login", expanded=False):
@@ -96,25 +113,10 @@ def _safe_rerun():
         if st.button("Sign in", key="adm_signin"):
             if u.strip() == APP_USERNAME and p == APP_PASSWORD:
                 st.session_state.is_admin = True
-                st.success("✅ Logged in.")
+                st.success("✅ Logged in as Admin.")
                 _safe_rerun()
             else:
                 st.error("❌ Wrong credentials.")
-
-
-def is_admin() -> bool:
-    if "is_admin" not in st.session_state:
-        st.session_state.is_admin = False
-    return st.session_state.is_admin
-
-def admin_tab():
-    # show login if not already admin
-    admin_login_ui()
-    if not is_admin():
-        st.stop()
-
-    st.subheader("🛠 Admin Panel")
-
     # ---- MEMBERS (approve registrations) ----
     st.markdown("### Members — Pending")
     dfm = ws_to_df(ws_members)
@@ -163,7 +165,25 @@ def admin_tab():
                             st.experimental_rerun()
                     with c2:
                         if st.button("Reject", key=f"d_rj_{row['Listing_ID']}"):
-                            reject_by_id(ws_dir, "Listing_ID", row["Listing_ID"], DIR_HEADERS)
+                            reject_by_id(ws_dir, "APP_USERNAME = st.secrets.get("APP_USERNAME", "")
+APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
+
+def _safe_rerun():
+    def admin_login_ui():
+    if is_admin():
+        st.success("Admin mode enabled.")
+        return
+
+    with st.expander("🔐 Admin login", expanded=False):
+        u = st.text_input("Username", key="adm_user")
+        p = st.text_input("Password", type="password", key="adm_pass")
+        if st.button("Sign in", key="adm_signin"):
+            if u.strip() == APP_USERNAME and p == APP_PASSWORD:
+                st.session_state.is_admin = True
+                st.success("✅ Logged in.")
+                _safe_rerun()
+            else:
+                st.error("❌ Wrong credentials.")Listing_ID", row["Listing_ID"], DIR_HEADERS)
                             st.warning("Rejected.")
                             st.experimental_rerun()
                     with c3:
