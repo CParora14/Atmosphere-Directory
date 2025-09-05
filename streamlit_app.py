@@ -81,17 +81,12 @@ html, body, [data-testid="stAppViewContainer"] {{
 )
 
 # ---------------------------- AUTH: ADMIN (Secrets) ---------------------------
-# ========================== ADMIN AUTH (ONE CLEAN BLOCK) ==========================
-
-# 1) Admin credentials are read from Streamlit Secrets:
-#    In Streamlit Cloud → Manage app → Settings → Secrets:
-#       APP_USERNAME = "your-username"
-#       APP_PASSWORD = "your-password"
+# --------------------------- AUTH / ADMIN (Secrets) ---------------------------
 APP_USERNAME = st.secrets.get("APP_USERNAME", "")
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
 
-# 2) Safe rerun helper (works across Streamlit versions)
 def _safe_rerun():
+    """Works on both new/old Streamlit versions without crashing."""
     try:
         st.rerun()
     except Exception:
@@ -100,20 +95,44 @@ def _safe_rerun():
         except Exception:
             pass
 
-# 3) Session flag for admin state
 def is_admin() -> bool:
+    """True if admin session flag is set."""
     if "is_admin" not in st.session_state:
         st.session_state.is_admin = False
     return st.session_state.is_admin
 
-# 4) Admin login UI (call this inside your Admin tab before showing approvals)
+def admin_login_ui():
+    """
+    Small login box that flips the admin flag on success.
+    Call this anywhere you want to prompt for admin login.
+    """
+    if is_admin():
+        st.success("Admin mode enabled.")
+        return
+
+    with st.expander("🔐 Admin login", expanded=False):
+        u = st.text_input("Username", key="adm_u")
+        p = st.text_input("Password", type="password", key="adm_p")
+        if st.button("Sign in", type="primary"):
+            if u.strip() == APP_USERNAME and p == APP_PASSWORD:
+                st.session_state.is_admin = True
+                st.success("✅ Logged in.")
+                _safe_rerun()
+            else:
+                st.error("❌ Wrong credentials.")
+
 def admin_tab():
+    """
+    Example wrapper you can wire to your Admin page/tab.
+    It first shows the login. If not admin yet, we stop.
+    """
     # show login if not already admin
     admin_login_ui()
     if not is_admin():
         st.stop()
 
-    st.subheader("⚙️ Admin Panel")
+    st.subheader("🛠️ Admin Panel")
+    st.info("Admin actions will appear here once you’re logged in.")
 
     # ---- MEMBERS (approve registrations) ----
     st.markdown("### Members — Pending")
