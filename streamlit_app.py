@@ -6,11 +6,73 @@ from __future__ import annotations
 import re, time, uuid, math, datetime as dt
 from typing import List, Tuple
 
-import pandas as pd
 import streamlit as st
 import gspread
-from gspread.exceptions import SpreadsheetNotFound, WorksheetNotFound, APIError
+import pandas as pd
 from google.oauth2.service_account import Credentials
+from gspread.exceptions import WorksheetNotFound
+
+# ------------------- HELPERS (place these just after imports) -------------------
+
+def ensure_ws(sh, title, headers):
+    """
+    Ensure worksheet with given title exists and has headers.
+    Returns a gspread Worksheet object.
+    """
+    try:
+        ws = sh.worksheet(title)
+    except WorksheetNotFound:
+        ws = sh.add_worksheet(title=title, rows=200, cols=len(headers))
+        ws.append_row(headers)
+    return ws
+
+
+def ws_to_df(ws) -> pd.DataFrame:
+    """
+    Convert a gspread worksheet to DataFrame.
+    """
+    try:
+        vals = ws.get_all_values()
+    except Exception:
+        return pd.DataFrame()
+
+    if not vals:
+        return pd.DataFrame()
+    if len(vals) == 1:
+        return pd.DataFrame(columns=vals[0])
+
+    return pd.DataFrame(vals[1:], columns=vals[0])
+
+
+def df_public(df: pd.DataFrame,
+              approved_col: str = "Approved",
+              expires_col: str | None = "Expires_On") -> pd.DataFrame:
+    """
+    Filter DataFrame to only approved and non-expired rows.
+    """
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    cols = {c.strip(): c for c in df.columns}
+    ac = cols.get(approved_col, approved_col)
+    ec = cols.get(expires_col, expires_col) if expires_col else None
+
+    d = df.copy()
+
+    if ac in d.columns:
+        true_like = {"true", "yes", "y", "1"}
+        d["_approved_flag"] = (
+            d[ac].astype(str).str.strip().str.lower().isin(true_like)
+        )
+        d = d[d["_approved_flag"] == True].drop(columns=["_approved_flag"])
+
+    if ec and ec in d.columns:
+        d["_exp_dt"] = pd.to_datetime(d[ec], errors="coerce", utc=True)
+        now = pd.Timestamp.utcnow()
+        mask = (d["_exp_dt"].isna()) | (d["_exp_dt"] >= now)
+        d = d[mask].drop(columns=["_exp_dt"])
+
+    return d.reset_index(drop=True)
 
 # ------------------------------ THEME / BRANDING ------------------------------
 PRIMARY   = "#18B8CB"   # brand teal
