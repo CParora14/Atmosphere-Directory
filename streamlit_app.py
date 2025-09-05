@@ -81,11 +81,11 @@ html, body, [data-testid="stAppViewContainer"] {{
 )
 
 # ---------------------------- AUTH: ADMIN (Secrets) ---------------------------
-# ------------------------------ AUTH / ADMIN ------------------------------
+
 APP_USERNAME = st.secrets.get("APP_USERNAME", "")
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
 
-# Safe rerun helper (works with new + old Streamlit)
+# Safe rerun helper (works with both old/new Streamlit versions)
 def _safe_rerun():
     try:
         st.rerun()
@@ -95,7 +95,7 @@ def _safe_rerun():
         except Exception:
             pass
 
-# Check if current session is admin
+# Check if admin is logged in
 def is_admin() -> bool:
     if "is_admin" not in st.session_state:
         st.session_state.is_admin = False
@@ -113,10 +113,14 @@ def admin_login_ui():
         if st.button("Sign in", key="adm_signin"):
             if u.strip() == APP_USERNAME and p == APP_PASSWORD:
                 st.session_state.is_admin = True
-                st.success("✅ Logged in as Admin.")
+                st.success("✅ Logged in.")
                 _safe_rerun()
             else:
                 st.error("❌ Wrong credentials.")
+
+
+# Check if current session is admin
+
     # ---- MEMBERS (approve registrations) ----
     st.markdown("### Members — Pending")
     dfm = ws_to_df(ws_members)
