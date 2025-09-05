@@ -113,6 +113,19 @@ def _open_sheet():
 with st.spinner("Connecting to Google Sheets…"):
     sh = _open_sheet()
 
+def get_ws(title: str, headers: list[str]) -> gspread.Worksheet:
+    """Open worksheet by name. If missing, create it and write headers (row 1).
+       This function is only called when WRITING, so normal page loads don't spam reads."""
+    try:
+        return sh.worksheet(title)
+    except WorksheetNotFound:
+        ws = sh.add_worksheet(title=title, rows=1000, cols=max(26, len(headers)))
+        try:
+            ws.update("A1", [headers])
+        except APIError:
+            pass
+        return ws
+
 # ===================== REQUIRED HEADERS =====================
 MEM_HEADERS = ["Member_ID","Submitted_At","Approved","Resident_Type","Phase","Wing",
                "Flat_No","Name","Email","Phone"]
@@ -139,30 +152,8 @@ CATEGORIES: Dict[str, List[str]] = {
     "Other": ["Other"]
 }
 
-def ensure_ws(sh, title: str, headers: list[str]):
-    """Ensure worksheet exists and has headers in row 1."""
-    try:
-        ws = sh.worksheet(title)
-    except WorksheetNotFound:
-        ws = sh.add_worksheet(title=title, rows=1000, cols=max(26, len(headers)))
-        ws.append_row(headers)
-        return ws
-    try:
-        if not ws.row_values(1):
-            ws.update("A1", [headers])
-    except APIError:
-        pass
-    return ws
-
-ws_members  = ensure_ws(sh, "Members",           MEM_HEADERS)
-ws_dir      = ensure_ws(sh, "Business_Listings", DIR_HEADERS)
-ws_ven      = ensure_ws(sh, "Vicinity_Vendors",  VEN_HEADERS)
-ws_show     = ensure_ws(sh, "Showcase",          SHOW_HEADERS)
-ws_rate     = ensure_ws(sh, "Ratings",           RATE_HEADERS)
-ws_supp     = ensure_ws(sh, "Support_Tickets",   SUPP_HEADERS)
-
 # ===================== CACHED READS (helps avoid 429 rate limits) =====================
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def read_df(tab: str) -> pd.DataFrame:
     try:
         ws = sh.worksheet(tab)
@@ -206,18 +197,19 @@ def admin_login_ui():
             else:
                 st.error("❌ Wrong credentials.")
 
-# ===================== WRITE HELPERS =====================
-def _append_row(ws, data: dict, headers: list[str]):
+# ===================== WRITE HELPERS (OPEN SHEET ONLY WHEN WRITING) =====================
+def _append_row(tab_name: str, data: dict, headers: list[str]):
+    ws = get_ws(tab_name, headers)
     ws.append_row([str(data.get(h,"")) for h in headers])
 
 def member_is_approved(email: str) -> bool:
     if not email:
         return False
     df = read_df("Members")
-    if df.empty:
+    if df.empty or "Email" not in df.columns:
         return False
     m = df[df["Email"].str.strip().str.lower() == email.strip().lower()]
-    if m.empty:
+    if m.empty or "Approved" not in m.columns:
         return False
     return m["Approved"].astype(str).str.strip().str.lower().isin(TRUE_LIKE).any()
 
@@ -229,7 +221,7 @@ def save_member(data: dict):
         Wing=data.get("Wing",""), Flat_No=data.get("Flat_No",""),
         Name=data.get("Name",""), Email=data.get("Email",""), Phone=data.get("Phone",""),
     )
-    _append_row(ws_members, payload, MEM_HEADERS)
+    _append_row("Members", payload, MEM_HEADERS)
     clear_cache()
 
 def save_directory(data: dict):
@@ -251,7 +243,7 @@ def save_directory(data: dict):
         Duration_Days=str(days),
         Expires_On=(dt.date.today()+dt.timedelta(days=days)).isoformat() if days>0 else ""
     )
-    _append_row(ws_dir, payload, DIR_HEADERS)
+    _append_row("Business_Listings", payload, DIR_HEADERS)
     clear_cache()
 
 def save_vendor(data: dict):
@@ -269,7 +261,7 @@ def save_vendor(data: dict):
         Duration_Days=str(days),
         Expires_On=(dt.date.today()+dt.timedelta(days=days)).isoformat() if days>0 else ""
     )
-    _append_row(ws_ven, payload, VEN_HEADERS)
+    _append_row("Vicinity_Vendors", payload, VEN_HEADERS)
     clear_cache()
 
 def save_ticket(email: str, subject: str, message: str):
@@ -277,7 +269,7 @@ def save_ticket(email: str, subject: str, message: str):
         Ticket_ID=f"T-{uuid.uuid4().hex[:8].upper()}",
         When=_now_iso(), Email=email, Subject=subject, Message=message, Status="Open"
     )
-    _append_row(ws_supp, payload, SUPP_HEADERS)
+    _append_row("Support_Tickets", payload, SUPP_HEADERS)
 
 def save_showcase(data: dict, approve: bool=False):
     payload = dict(
@@ -286,7 +278,7 @@ def save_showcase(data: dict, approve: bool=False):
         Title=data.get("Title",""), Type=data.get("Type","image"),
         URL=data.get("URL",""), Posted_By=data.get("Posted_By",""), Notes=data.get("Notes",""),
     )
-    _append_row(ws_show, payload, SHOW_HEADERS)
+    _append_row("Showcase", payload, SHOW_HEADERS)
     clear_cache()
 
 def save_rating(listing_id: str, stars: int, comment: str, email: str):
@@ -294,9 +286,9 @@ def save_rating(listing_id: str, stars: int, comment: str, email: str):
         When=_now_iso(), Type="Business", Target_ID=listing_id,
         Stars=str(stars), Comment=comment, Rater_Email=email
     )
-    _append_row(ws_rate, payload, RATE_HEADERS)
+    _append_row("Ratings", payload, RATE_HEADERS)
 
-# ===================== ADMIN ACTION HELPERS (no one-line if) =====================
+# ===================== ADMIN ACTION HELPERS =====================
 def _header_map(ws, defaults: list[str]) -> dict[str,int]:
     try:
         row1 = ws.row_values(1) or defaults
@@ -314,7 +306,8 @@ def _find_row_by_id(ws, id_col_idx: int, id_value: str) -> Optional[int]:
             return i
     return None
 
-def approve_by_id(ws, id_col: str, id_val: str, defaults: list[str], extra: dict | None = None):
+def approve_by_id(tab_name: str, id_col: str, id_val: str, defaults: list[str], extra: dict | None = None):
+    ws = get_ws(tab_name, defaults)
     hdr = _header_map(ws, defaults)
     id_idx = hdr.get(id_col)
     ap_idx = hdr.get("Approved")
@@ -331,7 +324,8 @@ def approve_by_id(ws, id_col: str, id_val: str, defaults: list[str], extra: dict
                 ws.update_cell(row, idx, v)
     clear_cache()
 
-def reject_by_id(ws, id_col: str, id_val: str, defaults: list[str]):
+def reject_by_id(tab_name: str, id_col: str, id_val: str, defaults: list[str]):
+    ws = get_ws(tab_name, defaults)
     hdr = _header_map(ws, defaults)
     id_idx = hdr.get(id_col)
     ap_idx = hdr.get("Approved")
@@ -343,7 +337,8 @@ def reject_by_id(ws, id_col: str, id_val: str, defaults: list[str]):
     ws.update_cell(row, ap_idx, "REJECTED")
     clear_cache()
 
-def extend_expiry(ws, id_col: str, id_val: str, defaults: list[str], extra_days: int):
+def extend_expiry(tab_name: str, id_col: str, id_val: str, defaults: list[str], extra_days: int):
+    ws = get_ws(tab_name, defaults)
     hdr = _header_map(ws, defaults)
     id_idx = hdr.get(id_col)
     ex_idx = hdr.get("Expires_On")
@@ -462,21 +457,19 @@ with tabs[2]:
             qc = q.lower()
             view = view[view.apply(lambda r: qc in (" ".join(map(str,r.values))).lower(), axis=1)]
 
-        st.dataframe(view[[
+        show_cols = [c for c in [
             "Business_Name","Category","Subcategory","Service_Type",
             "Short_Description","Phase","Wing","Flat_No","Resident_Type","Expires_On","Listing_ID"
-        ]], use_container_width=True)
+        ] if c in view.columns]
+        st.dataframe(view[show_cols], use_container_width=True)
 
         # rating form (for verified members)
         st.markdown("#### Rate a business")
         if "me" not in st.session_state:
             st.info("Sign in above to rate.")
         else:
-            if not view.empty:
-                # show name + id in the label
-                choices = [
-                    f"{row.Business_Name} — {row.Listing_ID}" for _, row in view.iterrows()
-                ]
+            if not view.empty and "Listing_ID" in view.columns and "Business_Name" in view.columns:
+                choices = [f"{row.Business_Name} — {row.Listing_ID}" for _, row in view.iterrows()]
                 choice = st.selectbox("Select listing", choices) if choices else None
                 stars  = st.slider("Stars", 1, 5, 5)
                 comment= st.text_input("Short comment (optional)")
@@ -532,9 +525,10 @@ with tabs[3]:
     if vdf.empty:
         st.info("No approved vendors yet.")
     else:
-        st.dataframe(vdf[[
+        show_cols = [c for c in [
             "Vendor_Name","Category","Short_Description","Contact","Phone","Address","Expires_On","Vendor_ID"
-        ]], use_container_width=True)
+        ] if c in vdf.columns]
+        st.dataframe(vdf[show_cols], use_container_width=True)
 
     st.markdown("---")
     st.markdown("### Suggest a vendor")
@@ -622,12 +616,13 @@ with tabs[6]:
 
         st.markdown("### Approvals")
 
-        dfm   = read_df("Members")
-        dfd   = read_df("Business_Listings")
-        dfv   = read_df("Vicinity_Vendors")
+        dfm = read_df("Members")
+        dfd = read_df("Business_Listings")
+        dfv = read_df("Vicinity_Vendors")
 
         # Members
-        pend_m = dfm[dfm["Approved"].astype(str).str.upper()!="TRUE"] if not dfm.empty else pd.DataFrame()
+        pend_m = (dfm[dfm["Approved"].astype(str).str.upper()!="TRUE"]
+                  if (not dfm.empty and "Approved" in dfm.columns) else pd.DataFrame())
         with st.expander(f"Members (pending: {len(pend_m)})", expanded=False):
             if pend_m.empty:
                 st.info("No pending members.")
@@ -638,15 +633,16 @@ with tabs[6]:
                         c1,c2 = st.columns(2)
                         with c1:
                             if st.button("Approve member", key=f"m_ap_{row['Member_ID']}"):
-                                approve_by_id(ws_members,"Member_ID",row["Member_ID"],MEM_HEADERS)
+                                approve_by_id("Members","Member_ID",row["Member_ID"],MEM_HEADERS)
                                 st.success("Approved."); _safe_rerun()
                         with c2:
                             if st.button("Reject member", key=f"m_rj_{row['Member_ID']}"):
-                                reject_by_id(ws_members,"Member_ID",row["Member_ID"],MEM_HEADERS)
+                                reject_by_id("Members","Member_ID",row["Member_ID"],MEM_HEADERS)
                                 st.warning("Rejected."); _safe_rerun()
 
         # Business Listings
-        pend_d = dfd[dfd["Approved"].astype(str).str.upper()!="TRUE"] if not dfd.empty else pd.DataFrame()
+        pend_d = (dfd[dfd["Approved"].astype(str).str.upper()!="TRUE"]
+                  if (not dfd.empty and "Approved" in dfd.columns) else pd.DataFrame())
         with st.expander(f"Business Listings (pending: {len(pend_d)})", expanded=False):
             if pend_d.empty:
                 st.info("No pending listings.")
@@ -662,20 +658,21 @@ with tabs[6]:
                                     extra = {"Expires_On": (dt.date.today()+dt.timedelta(days=days)).isoformat()} if days>0 else {}
                                 except Exception:
                                     extra = {}
-                                approve_by_id(ws_dir,"Listing_ID",row["Listing_ID"],DIR_HEADERS,extra)
+                                approve_by_id("Business_Listings","Listing_ID",row["Listing_ID"],DIR_HEADERS,extra)
                                 st.success("Approved."); _safe_rerun()
                         with c2:
                             if st.button("Reject listing", key=f"d_rj_{row['Listing_ID']}"):
-                                reject_by_id(ws_dir,"Listing_ID",row["Listing_ID"],DIR_HEADERS)
+                                reject_by_id("Business_Listings","Listing_ID",row["Listing_ID"],DIR_HEADERS)
                                 st.warning("Rejected."); _safe_rerun()
                         with c3:
                             more = st.number_input("Extend by days",0,365,0,key=f"d_ext_{row['Listing_ID']}")
                             if st.button("Apply extension", key=f"d_ext_btn_{row['Listing_ID']}"):
-                                extend_expiry(ws_dir,"Listing_ID",row["Listing_ID"],DIR_HEADERS,int(more))
+                                extend_expiry("Business_Listings","Listing_ID",row["Listing_ID"],DIR_HEADERS,int(more))
                                 st.success("Expiry extended."); _safe_rerun()
 
         # Vendors
-        pend_v = dfv[dfv["Approved"].astype(str).str.upper()!="TRUE"] if not dfv.empty else pd.DataFrame()
+        pend_v = (dfv[dfv["Approved"].astype(str).str.upper()!="TRUE"]
+                  if (not dfv.empty and "Approved" in dfv.columns) else pd.DataFrame())
         with st.expander(f"Vicinity Vendors (pending: {len(pend_v)})", expanded=False):
             if pend_v.empty:
                 st.info("No pending vendor submissions.")
@@ -691,16 +688,16 @@ with tabs[6]:
                                     extra = {"Expires_On": (dt.date.today()+dt.timedelta(days=days)).isoformat()} if days>0 else {}
                                 except Exception:
                                     extra = {}
-                                approve_by_id(ws_ven,"Vendor_ID",row["Vendor_ID"],VEN_HEADERS,extra)
+                                approve_by_id("Vicinity_Vendors","Vendor_ID",row["Vendor_ID"],VEN_HEADERS,extra)
                                 st.success("Approved."); _safe_rerun()
                         with c2:
                             if st.button("Reject vendor", key=f"v_rj_{row['Vendor_ID']}"):
-                                reject_by_id(ws_ven,"Vendor_ID",row["Vendor_ID"],VEN_HEADERS)
+                                reject_by_id("Vicinity_Vendors","Vendor_ID",row["Vendor_ID"],VEN_HEADERS)
                                 st.warning("Rejected."); _safe_rerun()
                         with c3:
                             more = st.number_input("Extend by days",0,365,0,key=f"v_ext_{row['Vendor_ID']}")
                             if st.button("Apply extension", key=f"v_ext_btn_{row['Vendor_ID']}"):
-                                extend_expiry(ws_ven,"Vendor_ID",row["Vendor_ID"],VEN_HEADERS,int(more))
+                                extend_expiry("Vicinity_Vendors","Vendor_ID",row["Vendor_ID"],VEN_HEADERS,int(more))
                                 st.success("Expiry extended."); _safe_rerun()
 
         st.markdown("### Export CSV")
