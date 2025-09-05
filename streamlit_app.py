@@ -189,6 +189,16 @@ def _open_sheet():
 
 with st.spinner("Connecting to Google Sheets…"):
     sh = _open_sheet()
+    # --- DIAGNOSTIC: show service account + list tabs (remove after it works) ---
+sa_email = st.secrets["gcp_service_account"]["client_email"]
+st.caption(f"Service Account: `{sa_email}`")
+try:
+    titles = [ws.title for ws in sh.worksheets()]
+    st.caption("Sheets I can see: " + ", ".join(titles))
+except Exception as e:
+    st.error("Cannot list worksheets – likely a permissions/share issue.")
+    st.code(str(e))
+    st.stop()
 
 ws_members  = ensure_ws(sh, "Members",           MEM_HEADERS)
 ws_dir      = ensure_ws(sh, "Business_Listings", DIR_HEADERS)
