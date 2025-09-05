@@ -81,11 +81,16 @@ html, body, [data-testid="stAppViewContainer"] {{
 )
 
 # ---------------------------- AUTH: ADMIN (Secrets) ---------------------------
+# ========================== ADMIN AUTH (ONE CLEAN BLOCK) ==========================
 
+# 1) Admin credentials are read from Streamlit Secrets:
+#    In Streamlit Cloud → Manage app → Settings → Secrets:
+#       APP_USERNAME = "your-username"
+#       APP_PASSWORD = "your-password"
 APP_USERNAME = st.secrets.get("APP_USERNAME", "")
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
 
-# Safe rerun helper (works with both old/new Streamlit versions)
+# 2) Safe rerun helper (works across Streamlit versions)
 def _safe_rerun():
     try:
         st.rerun()
@@ -95,19 +100,19 @@ def _safe_rerun():
         except Exception:
             pass
 
-# Check if admin is logged in
+# 3) Session flag for admin state
 def is_admin() -> bool:
     if "is_admin" not in st.session_state:
         st.session_state.is_admin = False
     return st.session_state.is_admin
 
-# Admin login UI
+# 4) Admin login UI (call this inside your Admin tab before showing approvals)
 def admin_login_ui():
     if is_admin():
         st.success("✅ Admin mode enabled.")
         return
 
-    with st.expander("🔐 Admin login", expanded=False):
+    with st.expander("🔐 Admin login", expanded=True):
         u = st.text_input("Username", key="adm_user")
         p = st.text_input("Password", type="password", key="adm_pass")
         if st.button("Sign in", key="adm_signin"):
@@ -116,10 +121,8 @@ def admin_login_ui():
                 st.success("✅ Logged in.")
                 _safe_rerun()
             else:
-                st.error("❌ Wrong credentials.")
-
-
-# Check if current session is admin
+                st.error("❌ Wrong credentials. Check APP_USERNAME / APP_PASSWORD in Secrets.")
+# ======================== END ADMIN AUTH (ONE CLEAN BLOCK) ========================
 
     # ---- MEMBERS (approve registrations) ----
     st.markdown("### Members — Pending")
