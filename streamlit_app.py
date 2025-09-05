@@ -107,117 +107,77 @@ def is_admin() -> bool:
     return st.session_state.is_admin
 
 # 4) Admin login UI (call this inside your Admin tab before showing approvals)
-def admin_login_ui():
-    if is_admin():
-        st.success("✅ Admin mode enabled.")
-        return
+def admin_tab():
+    # show login if not already admin
+    admin_login_ui()
+    if not is_admin():
+        st.stop()
 
-    with st.expander("🔐 Admin login", expanded=True):
-        u = st.text_input("Username", key="adm_user")
-        p = st.text_input("Password", type="password", key="adm_pass")
-        if st.button("Sign in", key="adm_signin"):
-            if u.strip() == APP_USERNAME and p == APP_PASSWORD:
-                st.session_state.is_admin = True
-                st.success("✅ Logged in.")
-                _safe_rerun()
-            else:
-                st.error("❌ Wrong credentials. Check APP_USERNAME / APP_PASSWORD in Secrets.")
-# ======================== END ADMIN AUTH (ONE CLEAN BLOCK) ========================
+    st.subheader("⚙️ Admin Panel")
 
-   # ---- MEMBERS (approve registrations) ----
-st.markdown("### Members — Pending")
+    # ---- MEMBERS (approve registrations) ----
+    st.markdown("### Members — Pending")
+    dfm = ws_to_df(ws_members)
 
-dfm = ws_to_df(ws_members)
-
-if dfm.empty:
-    st.info("No member records yet.")
-else:
-    # show only entries not yet approved (Approved != TRUE)
-    pend_m = dfm[dfm["Approved"].astype(str).str.upper() != "TRUE"]
-    if pend_m.empty:
-        st.success("No pending members.")
+    if dfm.empty:
+        st.info("No member records yet.")
     else:
-        for _, row in pend_m.iterrows():
-            with st.expander(f"{row.get('Name','(no name)')} • {row.get('Email','')}"):
-                st.write(dict(row))
+        pend_m = dfm[dfm["Approved"].astype(str).str.upper() != "TRUE"]
+        if pend_m.empty:
+            st.success("No pending members.")
+        else:
+            for _, row in pend_m.iterrows():
+                with st.expander(f"{row.get('Name','(no name)')} • {row.get('Email','')}"):
+                    st.write(dict(row))
+                    c1, c2 = st.columns(2)
 
-                c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Approve member", key=f"m_ap_{row['Member_ID']}"):
+                            approve_by_id(ws_members, "Member_ID", row["Member_ID"], MEM_HEADERS)
+                            st.success("Approved.")
+                            _safe_rerun()
 
-                with c1:
-                    if st.button("Approve member", key=f"m_ap_{row['Member_ID']}"):
-                        # mark Approved = TRUE for this member
-                        approve_by_id(
-                            ws_members,           # which worksheet to update
-                            "Member_ID",          # id column name
-                            row["Member_ID"],     # id value
-                            MEM_HEADERS           # header order for rebuild
-                        )
-                        st.success("Approved.")
-                        _safe_rerun()
+                    with c2:
+                        if st.button("Reject member", key=f"m_rj_{row['Member_ID']}"):
+                            reject_by_id(ws_members, "Member_ID", row["Member_ID"])
+                            st.warning("Rejected.")
+                            _safe_rerun()
 
-                with c2:
-                    if st.button("Reject member", key=f"m_rj_{row['Member_ID']}"):
-                        # remove this member row entirely (or switch to a 'Status' column if you prefer)
-                        reject_by_id(
-                            ws_members,           # reject in the same Members sheet
-                            "Member_ID",
-                            row["Member_ID"]
-                        )
-                        st.warning("Rejected.")
-                        _safe_rerun()
-
-st.divider()
+    st.divider()
 
     # ---- BUSINESS LISTINGS (approve / reject / extend) ----
     st.markdown("### Resident Business Listings — Pending")
     dfd = ws_to_df(ws_dir)
+
     if dfd.empty:
-        st.info("No listings.")
+        st.info("No business listings yet.")
     else:
-        pend_d = dfd[dfd["Approved"].str.upper() != "TRUE"] if "Approved" in dfd else pd.DataFrame()
-        if pend_d.empty:
+        pend_b = dfd[dfd["Approved"].astype(str).str.upper() != "TRUE"]
+        if pend_b.empty:
             st.success("No pending business listings.")
         else:
-            for _, row in pend_d.iterrows():
-                with st.expander(f"{row.get('Business_Name','')} · {row.get('Member_Email','')}"):
+            for _, row in pend_b.iterrows():
+                with st.expander(f"{row.get('Business_Name','(no business)')} • {row.get('Member_Email','')}"):
                     st.write(dict(row))
-                    c1, c2, c3 = st.columns([1,1,2])
+                    c1, c2, c3 = st.columns(3)
+
                     with c1:
-                        if st.button("Approve", key=f"d_ap_{row['Listing_ID']}"):
+                        if st.button("Approve business", key=f"b_ap_{row['Listing_ID']}"):
                             approve_by_id(ws_dir, "Listing_ID", row["Listing_ID"], DIR_HEADERS)
                             st.success("Approved.")
-                            st.experimental_rerun()
+                            _safe_rerun()
+
                     with c2:
-                        if st.button("Reject", key=f"d_rj_{row['Listing_ID']}"):
-                            reject_by_id(ws_dir, "APP_USERNAME = st.secrets.get("APP_USERNAME", "")
-APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
-
-def _safe_rerun():
-    def admin_login_ui():
-    if is_admin():
-        st.success("Admin mode enabled.")
-        return
-
-    with st.expander("🔐 Admin login", expanded=False):
-        u = st.text_input("Username", key="adm_user")
-        p = st.text_input("Password", type="password", key="adm_pass")
-        if st.button("Sign in", key="adm_signin"):
-            if u.strip() == APP_USERNAME and p == APP_PASSWORD:
-                st.session_state.is_admin = True
-                st.success("✅ Logged in.")
-                _safe_rerun()
-            else:
-                st.error("❌ Wrong credentials.")Listing_ID", row["Listing_ID"], DIR_HEADERS)
+                        if st.button("Reject business", key=f"b_rj_{row['Listing_ID']}"):
+                            reject_by_id(ws_dir, "Listing_ID", row["Listing_ID"])
                             st.warning("Rejected.")
-                            st.experimental_rerun()
-                    with c3:
-                        extra = st.number_input("Extend days", min_value=0, max_value=365, value=0, key=f"d_ex_{row['Listing_ID']}")
-                        if st.button("Apply extension", key=f"d_ex_btn_{row['Listing_ID']}"):
-                            extend_expiry(ws_dir, "Listing_ID", row["Listing_ID"], DIR_HEADERS, extra)
-                            st.success("Expiry extended.")
-                            st.experimental_rerun()
+                            _safe_rerun()
 
-    st.divider()
+                    with c3:
+                        if st.button("Extend expiry", key=f"b_ex_{row['Listing_ID']}"):
+                            extend_by_id(ws_dir, "Listing_ID", row["Listing_ID"], extra_days=30)
+                            st.info("Extended by 30 days.")
+                            _safe_rerun()
 
     # ---- VENDORS (approve / reject / extend) ----
     st.markdown("### Vicinity Vendors — Pending")
