@@ -124,32 +124,49 @@ def admin_login_ui():
                 st.error("❌ Wrong credentials. Check APP_USERNAME / APP_PASSWORD in Secrets.")
 # ======================== END ADMIN AUTH (ONE CLEAN BLOCK) ========================
 
-    # ---- MEMBERS (approve registrations) ----
-    st.markdown("### Members — Pending")
-    dfm = ws_to_df(ws_members)
-    if dfm.empty:
-        st.info("No members yet.")
-    else:
-        pend_m = dfm[dfm["Approved"].str.upper() != "TRUE"] if "Approved" in dfm else pd.DataFrame()
-        if pend_m.empty:
-            st.success("No pending members.")
-        else:
-            for _, row in pend_m.iterrows():
-                with st.expander(f"{row.get('Name','')} · {row.get('Email','')}"):
-                    st.write(dict(row))
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        if st.button("Approve member", key=f"m_ap_{row['Member_ID']}"):
-                            approve_by_id(ws_members, "Member_ID", row["Member_ID"], MEM_HEADERS)
-                            st.success("Approved.")
-                            st.experimental_rerun()
-                    with c2:
-                        if st.button("Reject member", key=f"m_rj_{row['Member_ID']}"):
-                            reject_by_id(ws_members, "Member_ID", row["Member_ID"], MEM_HEADERS)
-                            st.warning("Rejected.")
-                            st.experimental_rerun()
+   # ---- MEMBERS (approve registrations) ----
+st.markdown("### Members — Pending")
 
-    st.divider()
+dfm = ws_to_df(ws_members)
+
+if dfm.empty:
+    st.info("No member records yet.")
+else:
+    # show only entries not yet approved (Approved != TRUE)
+    pend_m = dfm[dfm["Approved"].astype(str).str.upper() != "TRUE"]
+    if pend_m.empty:
+        st.success("No pending members.")
+    else:
+        for _, row in pend_m.iterrows():
+            with st.expander(f"{row.get('Name','(no name)')} • {row.get('Email','')}"):
+                st.write(dict(row))
+
+                c1, c2 = st.columns(2)
+
+                with c1:
+                    if st.button("Approve member", key=f"m_ap_{row['Member_ID']}"):
+                        # mark Approved = TRUE for this member
+                        approve_by_id(
+                            ws_members,           # which worksheet to update
+                            "Member_ID",          # id column name
+                            row["Member_ID"],     # id value
+                            MEM_HEADERS           # header order for rebuild
+                        )
+                        st.success("Approved.")
+                        _safe_rerun()
+
+                with c2:
+                    if st.button("Reject member", key=f"m_rj_{row['Member_ID']}"):
+                        # remove this member row entirely (or switch to a 'Status' column if you prefer)
+                        reject_by_id(
+                            ws_members,           # reject in the same Members sheet
+                            "Member_ID",
+                            row["Member_ID"]
+                        )
+                        st.warning("Rejected.")
+                        _safe_rerun()
+
+st.divider()
 
     # ---- BUSINESS LISTINGS (approve / reject / extend) ----
     st.markdown("### Resident Business Listings — Pending")
