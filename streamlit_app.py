@@ -1,5 +1,5 @@
 # Atmosphere Society — Community Hub
-# Showcase • Directory • Vendors • Support
+# Showcase • Resident Business Directory • Vendors • Support
 # One-file app (replace your streamlit_app.py with this)
 
 from __future__ import annotations
@@ -114,8 +114,7 @@ with st.spinner("Connecting to Google Sheets…"):
     sh = _open_sheet()
 
 def get_ws(title: str, headers: list[str]) -> gspread.Worksheet:
-    """Open worksheet by name. If missing, create it and write headers (row 1).
-       This function is only called when WRITING, so normal page loads don't spam reads."""
+    """Open worksheet by name. If missing, create it and write headers (row 1)."""
     try:
         return sh.worksheet(title)
     except WorksheetNotFound:
@@ -197,7 +196,7 @@ def admin_login_ui():
             else:
                 st.error("❌ Wrong credentials.")
 
-# ===================== WRITE HELPERS (OPEN SHEET ONLY WHEN WRITING) =====================
+# ===================== WRITE HELPERS =====================
 def _append_row(tab_name: str, data: dict, headers: list[str]):
     ws = get_ws(tab_name, headers)
     ws.append_row([str(data.get(h,"")) for h in headers])
@@ -374,7 +373,7 @@ def header():
 header()
 
 # ===================== NAV TABS (Showcase first) =====================
-tabs = st.tabs(["🏠 Showcase", "ℹ️ About", "📇 Directory",
+tabs = st.tabs(["🏠 Showcase", "ℹ️ About", "📇 Resident Business Directory",
                 "🛒 Vicinity Vendors", "🆘 Support", "🧑‍🤝‍🧑 Register", "🛠️ Admin"])
 
 # ---- Showcase ----
@@ -417,11 +416,11 @@ A simple, community-first hub for *Atmosphere Society* residents & tenants.
 - Expired listings stop showing automatically; Admin can extend.
 """)
 
-# ---- Directory ----
+# ---- Resident Business Directory ----
 with tabs[2]:
     st.subheader("Resident Business Directory")
 
-    # member quick sign-in (email)
+    # Member sign-in for submissions & ratings (admin can bypass)
     with st.expander("Member quick sign-in (email for submissions & rating)"):
         me = st.text_input("Your Email", key="me_email").strip()
         if st.button("Set as me", key="me_set"):
@@ -435,17 +434,17 @@ with tabs[2]:
     if df.empty:
         st.info("No approved listings yet.")
     else:
-        # filters
-        c = st.columns(5)
-        with c[0]:
+        # Filters
+        cols = st.columns(5)
+        with cols[0]:
             f_phase = st.selectbox("Phase", ["All"]+sorted(df["Phase"].dropna().unique().tolist()))
-        with c[1]:
+        with cols[1]:
             f_cat   = st.selectbox("Category", ["All"]+sorted(df["Category"].dropna().unique().tolist()))
-        with c[2]:
+        with cols[2]:
             f_srv   = st.selectbox("Service Type", ["All"]+sorted(df["Service_Type"].dropna().unique().tolist()))
-        with c[3]:
+        with cols[3]:
             f_wing  = st.selectbox("Wing", ["All"]+sorted(df["Wing"].dropna().unique().tolist()))
-        with c[4]:
+        with cols[4]:
             q       = st.text_input("Search")
 
         view = df.copy()
@@ -457,32 +456,45 @@ with tabs[2]:
             qc = q.lower()
             view = view[view.apply(lambda r: qc in (" ".join(map(str,r.values))).lower(), axis=1)]
 
-        show_cols = [c for c in [
-            "Business_Name","Category","Subcategory","Service_Type",
-            "Short_Description","Phase","Wing","Flat_No","Resident_Type","Expires_On","Listing_ID"
-        ] if c in view.columns]
-        st.dataframe(view[show_cols], use_container_width=True)
-
-        # rating form (for verified members)
-        st.markdown("#### Rate a business")
-        if "me" not in st.session_state:
-            st.info("Sign in above to rate.")
+        # Card view + inline rating
+        if view.empty:
+            st.info("No results.")
         else:
-            if not view.empty and "Listing_ID" in view.columns and "Business_Name" in view.columns:
-                choices = [f"{row.Business_Name} — {row.Listing_ID}" for _, row in view.iterrows()]
-                choice = st.selectbox("Select listing", choices) if choices else None
-                stars  = st.slider("Stars", 1, 5, 5)
-                comment= st.text_input("Short comment (optional)")
-                if st.button("Submit rating"):
-                    if choice:
-                        listing_id = choice.split("—")[-1].strip()
-                        save_rating(listing_id, stars, comment, st.session_state.me)
-                        st.success("Thanks for your rating!")
+            for _, row in view.sort_values("Submitted_At", ascending=False).iterrows():
+                with st.container(border=True):
+                    st.markdown(f"### {row.get('Business_Name','(no name)')}")
+                    st.caption(
+                        f"{row.get('Category','')} • {row.get('Subcategory','')} • "
+                        f"{row.get('Service_Type','')} — Phase {row.get('Phase','')} "
+                        f"{row.get('Wing','')} {row.get('Flat_No','')}"
+                    )
+                    st.write(row.get("Short_Description",""))
+                    imgs = [row.get("Image_URL_1",""), row.get("Image_URL_2",""), row.get("Image_URL_3","")]
+                    imgs = [u for u in imgs if u]
+                    if imgs:
+                        st.image(imgs, use_container_width=True)
+
+                    # Inline rating (available if verified member or admin)
+                    can_rate = ("me" in st.session_state and member_is_approved(st.session_state.me)) or is_admin()
+                    st.markdown("**Rate this business**")
+                    if not can_rate:
+                        st.info("Sign in above (or admin login) to rate.")
+                    else:
+                        colr1, colr2 = st.columns([2,5])
+                        with colr1:
+                            stars = st.slider("Stars", 1, 5, 5, key=f"rate_stars_{row['Listing_ID']}")
+                        with colr2:
+                            comment = st.text_input("Short comment (optional)", key=f"rate_c_{row['Listing_ID']}")
+                        if st.button("Submit rating", key=f"rate_btn_{row['Listing_ID']}"):
+                            email_for_rating = st.session_state.me if "me" in st.session_state else APP_USERNAME
+                            save_rating(row["Listing_ID"], int(stars), comment, email_for_rating)
+                            st.success("Thanks for your rating!")
 
     st.markdown("---")
     st.markdown("### Submit your business")
-    if "me" not in st.session_state:
-        st.info("Sign in as a verified member (email) above to submit.")
+    can_submit_dir = (("me" in st.session_state and member_is_approved(st.session_state.me)) or is_admin())
+    if not can_submit_dir:
+        st.info("Sign in as a verified member (email) **or** login as Admin to submit.")
     else:
         with st.form("dir_submit"):
             c1,c2,c3 = st.columns(3)
@@ -509,8 +521,9 @@ with tabs[2]:
 
             ok = st.form_submit_button("Submit for approval", type="primary")
             if ok:
+                email_for_submit = st.session_state.me if "me" in st.session_state else f"admin@{APP_USERNAME}"
                 save_directory(dict(
-                    Member_Email=st.session_state.me, Resident_Type=resident_type,
+                    Member_Email=email_for_submit, Resident_Type=resident_type,
                     Phase=phase, Wing=wing, Flat_No=flat,
                     Business_Name=b_name, Category=category, Subcategory=subcategory,
                     Service_Type=service, Short_Description=short, Detailed_Description=detail,
@@ -518,7 +531,7 @@ with tabs[2]:
                 ))
                 st.success("Submitted! Admin will review & approve.")
 
-# ---- Vendors ----
+# ---- Vicinity Vendors ----
 with tabs[3]:
     st.subheader("Vicinity Vendors")
     vdf = df_public(read_df("Vicinity_Vendors"))
@@ -532,8 +545,9 @@ with tabs[3]:
 
     st.markdown("---")
     st.markdown("### Suggest a vendor")
-    if "me" not in st.session_state:
-        st.info("Sign in as a verified member (email) in Directory tab before submitting.")
+    can_submit_vendor = (("me" in st.session_state and member_is_approved(st.session_state.me)) or is_admin())
+    if not can_submit_vendor:
+        st.info("Sign in as a verified member (email) **or** login as Admin to submit a vendor.")
     else:
         with st.form("ven_submit"):
             c1,c2 = st.columns(2)
@@ -552,8 +566,9 @@ with tabs[3]:
             with i3: vu3 = st.text_input("Image URL 3")
             ok = st.form_submit_button("Submit vendor", type="primary")
             if ok:
+                email_for_submit = st.session_state.me if "me" in st.session_state else f"admin@{APP_USERNAME}"
                 save_vendor(dict(
-                    Member_Email=st.session_state.me, Vendor_Name=vname, Category=vcat,
+                    Member_Email=email_for_submit, Vendor_Name=vname, Category=vcat,
                     Contact=vcontact, Phone=vphone, Address=vaddr, Short_Description=vshort,
                     Image_URL_1=vu1, Image_URL_2=vu2, Image_URL_3=vu3, Duration_Days=int(vdur)
                 ))
@@ -590,8 +605,8 @@ with tabs[5]:
         ok = st.form_submit_button("Register", type="primary")
         if ok:
             save_member(dict(
-                Resident_Type=rtype, Phase=phase, Wing=wing, Flat_No=flat,
-                Name=name, Email=email, Phone=phone
+                Resident_Type=rtype, Phase=phase, Wing=wing, Flat=flat if (flat or "").isdigit() else flat,
+                Flat_No=flat, Name=name, Email=email, Phone=phone
             ))
             st.success("Registered! Wait for admin approval.")
 
@@ -704,6 +719,7 @@ with tabs[6]:
         if not dfd.empty: st.download_button("Businesses.csv", dfd.to_csv(index=False).encode(), "businesses.csv")
         if not dfv.empty: st.download_button("Vendors.csv",   dfv.to_csv(index=False).encode(), "vendors.csv")
         if not dfm.empty: st.download_button("Members.csv",   dfm.to_csv(index=False).encode(), "members.csv")
+
 
 
 
