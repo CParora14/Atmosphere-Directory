@@ -95,22 +95,117 @@ def is_admin() -> bool:
         st.session_state.is_admin = False
     return st.session_state.is_admin
 
-def admin_login_ui():
-    if is_admin():
-        with st.sidebar:
-            st.success("Admin mode: ON")
-        return
-    with st.sidebar:
-        with st.expander("🔑 Admin Login", expanded=False):
-            u = st.text_input("Username", key="adm_u")
-            p = st.text_input("Password", type="password", key="adm_p")
-            if st.button("Sign in", type="primary", use_container_width=True):
-                if u.strip() == APP_USERNAME and p == APP_PASSWORD:
-                    st.session_state.is_admin = True
-                    st.success("✅ Logged in.")
-                    _safe_rerun()
-                else:
-                    st.error("❌ Wrong credentials.")
+def admin_tab():
+    # show login if not already admin
+    admin_login_ui()
+    if not is_admin():
+        st.stop()
+
+    st.subheader("🛠 Admin Panel")
+
+    # ---- MEMBERS (approve registrations) ----
+    st.markdown("### Members — Pending")
+    dfm = ws_to_df(ws_members)
+    if dfm.empty:
+        st.info("No members yet.")
+    else:
+        pend_m = dfm[dfm["Approved"].str.upper() != "TRUE"] if "Approved" in dfm else pd.DataFrame()
+        if pend_m.empty:
+            st.success("No pending members.")
+        else:
+            for _, row in pend_m.iterrows():
+                with st.expander(f"{row.get('Name','')} · {row.get('Email','')}"):
+                    st.write(dict(row))
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Approve member", key=f"m_ap_{row['Member_ID']}"):
+                            approve_by_id(ws_members, "Member_ID", row["Member_ID"], MEM_HEADERS)
+                            st.success("Approved.")
+                            st.experimental_rerun()
+                    with c2:
+                        if st.button("Reject member", key=f"m_rj_{row['Member_ID']}"):
+                            reject_by_id(ws_members, "Member_ID", row["Member_ID"], MEM_HEADERS)
+                            st.warning("Rejected.")
+                            st.experimental_rerun()
+
+    st.divider()
+
+    # ---- BUSINESS LISTINGS (approve / reject / extend) ----
+    st.markdown("### Resident Business Listings — Pending")
+    dfd = ws_to_df(ws_dir)
+    if dfd.empty:
+        st.info("No listings.")
+    else:
+        pend_d = dfd[dfd["Approved"].str.upper() != "TRUE"] if "Approved" in dfd else pd.DataFrame()
+        if pend_d.empty:
+            st.success("No pending business listings.")
+        else:
+            for _, row in pend_d.iterrows():
+                with st.expander(f"{row.get('Business_Name','')} · {row.get('Member_Email','')}"):
+                    st.write(dict(row))
+                    c1, c2, c3 = st.columns([1,1,2])
+                    with c1:
+                        if st.button("Approve", key=f"d_ap_{row['Listing_ID']}"):
+                            approve_by_id(ws_dir, "Listing_ID", row["Listing_ID"], DIR_HEADERS)
+                            st.success("Approved.")
+                            st.experimental_rerun()
+                    with c2:
+                        if st.button("Reject", key=f"d_rj_{row['Listing_ID']}"):
+                            reject_by_id(ws_dir, "Listing_ID", row["Listing_ID"], DIR_HEADERS)
+                            st.warning("Rejected.")
+                            st.experimental_rerun()
+                    with c3:
+                        extra = st.number_input("Extend days", min_value=0, max_value=365, value=0, key=f"d_ex_{row['Listing_ID']}")
+                        if st.button("Apply extension", key=f"d_ex_btn_{row['Listing_ID']}"):
+                            extend_expiry(ws_dir, "Listing_ID", row["Listing_ID"], DIR_HEADERS, extra)
+                            st.success("Expiry extended.")
+                            st.experimental_rerun()
+
+    st.divider()
+
+    # ---- VENDORS (approve / reject / extend) ----
+    st.markdown("### Vicinity Vendors — Pending")
+    dfv = ws_to_df(ws_ven)
+    if dfv.empty:
+        st.info("No vendors.")
+    else:
+        pend_v = dfv[dfv["Approved"].str.upper() != "TRUE"] if "Approved" in dfv else pd.DataFrame()
+        if pend_v.empty:
+            st.success("No pending vendor submissions.")
+        else:
+            for _, row in pend_v.iterrows():
+                with st.expander(f"{row.get('Vendor_Name','')} · {row.get('Member_Email','')}"):
+                    st.write(dict(row))
+                    c1, c2, c3 = st.columns([1,1,2])
+                    with c1:
+                        if st.button("Approve", key=f"v_ap_{row['Vendor_ID']}"):
+                            approve_by_id(ws_ven, "Vendor_ID", row["Vendor_ID"], VEN_HEADERS)
+                            st.success("Approved.")
+                            st.experimental_rerun()
+                    with c2:
+                        if st.button("Reject", key=f"v_rj_{row['Vendor_ID']}"):
+                            reject_by_id(ws_ven, "Vendor_ID", row["Vendor_ID"], VEN_HEADERS)
+                            st.warning("Rejected.")
+                            st.experimental_rerun()
+                    with c3:
+                        extra = st.number_input("Extend days", min_value=0, max_value=365, value=0, key=f"v_ex_{row['Vendor_ID']}")
+                        if st.button("Apply extension", key=f"v_ex_btn_{row['Vendor_ID']}"):
+                            extend_expiry(ws_ven, "Vendor_ID", row["Vendor_ID"], VEN_HEADERS, extra)
+                            st.success("Expiry extended.")
+                            st.experimental_rerun()
+
+    st.divider()
+    st.markdown("### Export CSV")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if not dfd.empty:
+            st.download_button("Businesses.csv", dfd.to_csv(index=False).encode(), "businesses.csv")
+    with col2:
+        if not dfv.empty:
+            st.download_button("Vendors.csv", dfv.to_csv(index=False).encode(), "vendors.csv")
+    with col3:
+        if not dfm.empty:
+            st.download_button("Members.csv", dfm.to_csv(index=False).encode(), "members.csv")
 
 # --------------------------- GOOGLE SHEETS CONNECTION -------------------------
 SCOPES = [
@@ -202,88 +297,65 @@ ws_rate     = ensure_ws(sh, "Ratings",           RATE_HEADERS)
 ws_supp     = ensure_ws(sh, "Support_Tickets",   SUPP_HEADERS)
 
 # ------------------------------- HELPERS --------------------------------------
-def now_str():
-    return dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+# ---------- Admin helpers: header map, approve/reject, extend ----------
+from datetime import date, timedelta
+from gspread.exceptions import APIError
 
-def today():
-    return dt.date.today()
+def _header_map(ws, default_headers: list[str]) -> dict:
+    """Return header name -> column index (1-based). Falls back to defaults if read fails."""
+    try:
+        vals = ws.get_values('1:1')  # first row only
+        headers = vals[0] if vals else default_headers
+    except APIError:
+        headers = default_headers
+    return {h: i+1 for i, h in enumerate(headers)}
 
-def add_days(d:dt.date, n:int) -> dt.date:
-    return d + dt.timedelta(days=n)
+def _find_row_by_id(ws, id_col_idx: int, id_value: str) -> int:
+    """Return row number (1-based) for the given id_value in the id column."""
+    try:
+        col_vals = ws.col_values(id_col_idx)  # reads only one column
+        if id_value in col_vals:
+            return col_vals.index(id_value) + 1
+    except APIError:
+        pass
+    # Fallback: search anywhere
+    cell = ws.find(id_value)
+    return cell.row
 
-def as_bool(x:str) -> bool:
-    return str(x).strip().lower() in ("true","1","yes","y")
+def approve_by_id(ws, id_col_name: str, id_value: str, headers_defaults: list[str]):
+    hdr = _header_map(ws, headers_defaults)
+    id_col = hdr.get(id_col_name)
+    appr_col = hdr.get("Approved")
+    if not id_col or not appr_col:
+        st.error("Headers missing: need both ID column and Approved.")
+        return
+    row = _find_row_by_id(ws, id_col, id_value)
+    ws.update_cell(row, appr_col, "TRUE")
 
-def member_lookup(email:str) -> dict | None:
-    df = ws_to_df(ws_members)
-    if df.empty: return None
-    m = df[df["Email"].str.strip().str.lower() == email.strip().lower()]
-    if m.empty: return None
-    return m.iloc[0].to_dict()
+def reject_by_id(ws, id_col_name: str, id_value: str, headers_defaults: list[str]):
+    hdr = _header_map(ws, headers_defaults)
+    id_col = hdr.get(id_col_name)
+    appr_col = hdr.get("Approved")
+    if not id_col or not appr_col:
+        st.error("Headers missing: need both ID column and Approved.")
+        return
+    row = _find_row_by_id(ws, id_col, id_value)
+    ws.update_cell(row, appr_col, "REJECTED")
 
-def member_is_approved(email:str) -> bool:
-    m = member_lookup(email)
-    if not m: return False
-    return as_bool(m.get("Approved",""))
-
-def save_member(data:dict):
-    rid = uuid.uuid4().hex[:10].upper()
-    append(ws_members, [
-        rid, now_str(), "FALSE",
-        data["Resident_Type"], data["Phase"], data["Wing"], data["Flat_No"],
-        data["Name"], data["Email"], data["Phone"]
-    ])
-
-def save_directory(data:dict):
-    lid = uuid.uuid4().hex[:10].upper()
-    expires = add_days(today(), int(data["Duration_Days"]))
-    append(ws_dir, [
-        lid, now_str(), "FALSE", data["Member_Email"],
-        data["Resident_Type"], data["Phase"], data["Wing"], data["Flat_No"],
-        data["Business_Name"], data["Category"], data["Subcategory"], data["Service_Type"],
-        data["Short_Description"], data["Detailed_Description"],
-        data["Image_URL_1"], data["Image_URL_2"], data["Image_URL_3"],
-        str(data["Duration_Days"]), str(expires)
-    ])
-
-def save_vendor(data:dict):
-    vid = uuid.uuid4().hex[:10].upper()
-    expires = add_days(today(), int(data["Duration_Days"]))
-    append(ws_ven, [
-        vid, now_str(), "FALSE", data["Member_Email"],
-        data["Vendor_Name"], data["Contact"], data["Phone"], data["Address"], data["Category"],
-        data["Short_Description"],
-        data["Image_URL_1"], data["Image_URL_2"], data["Image_URL_3"],
-        str(data["Duration_Days"]), str(expires)
-    ])
-
-def save_showcase(data:dict, approve:bool=False):
-    sid = uuid.uuid4().hex[:10].upper()
-    append(ws_show, [
-        sid, now_str(), "TRUE" if approve else "FALSE",
-        data["Title"], data["Type"], data["URL"], data.get("Posted_By",""), data.get("Notes","")
-    ])
-
-def save_rating(target_type:str, target_id:str, stars:int, comment:str, email:str):
-    append(ws_rate, [now_str(), target_type, target_id, str(stars), comment, email])
-
-def save_ticket(email:str, sub:str, msg:str):
-    append(ws_supp, [uuid.uuid4().hex[:10].upper(), now_str(), email, sub, msg, "Open"])
-
-def df_public(df:pd.DataFrame, approved_col="Approved", expires_col="Expires_On"):
-    if df.empty: return df
-    out = df.copy()
-    if approved_col in out.columns:
-        out = out[out[approved_col].str.upper()=="TRUE"]
-    if expires_col in out.columns:
-        try:
-            out["_exp"] = pd.to_datetime(out[expires_col], errors="coerce").dt.date
-            out = out[(out["_exp"].isna()) | (out["_exp"] >= today())]
-            out = out.drop(columns=["_exp"])
-        except Exception:
-            pass
-    return out
-
+def extend_expiry(ws, id_col_name: str, id_value: str, headers_defaults: list[str], extra_days: int):
+    hdr = _header_map(ws, headers_defaults)
+    id_col = hdr.get(id_col_name)
+    exp_col = hdr.get("Expires_On")
+    if not id_col or not exp_col:
+        st.error("Headers missing: need ID and Expires_On.")
+        return
+    row = _find_row_by_id(ws, id_col, id_value)
+    current = ws.cell(row, exp_col).value
+    try:
+        new_dt = date.fromisoformat(current) + timedelta(days=int(extra_days))
+    except Exception:
+        new_dt = date.today() + timedelta(days=int(extra_days))
+    ws.update_cell(row, exp_col, new_dt.isoformat())
 # ------------------------------- UI HEAD --------------------------------------
 def header():
     cols = st.columns([1,10])
