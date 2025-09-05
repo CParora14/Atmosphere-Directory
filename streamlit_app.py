@@ -9,7 +9,7 @@ from typing import List, Tuple
 import pandas as pd
 import streamlit as st
 import gspread
-from gspread.exceptions import SpreadsheetNotFound, WorksheetNotFound
+from gspread.exceptions import SpreadsheetNotFound, WorksheetNotFound, APIError
 from google.oauth2.service_account import Credentials
 
 # ------------------------------ THEME / BRANDING ------------------------------
@@ -128,18 +128,25 @@ def open_sh(url:str):
     gc = get_client()
     return gc.open_by_url(url)
 
-def ensure_ws(sh, title:str, headers:List[str]):
-    """Return a worksheet and make sure it exists + has header row."""
+# ---------- safest worksheet opener: no reads, no header checks ----------
+def ensure_ws(sh, title: str, headers: list[str]):
+    """
+    Return a worksheet called `title`. Create it if missing.
+    DOES NOT read row values. You set headers manually in Sheets.
+    """
     try:
-        ws = sh.worksheet(title)
-    except WorksheetNotFound:
-        ws = sh.add_worksheet(title=title, rows=2000, cols=max(10,len(headers)))
-    # header
-    vals = ws.row_values(1)
-    if not vals:
-        ws.update("A1", [headers])
-    return ws
-
+        try:
+            # Try to open existing sheet
+            ws = sh.worksheet(title)
+            return ws
+        except WorksheetNotFound:
+            # Create if missing (no reads here)
+            ws = sh.add_worksheet(title=title, rows=1000, cols=max(26, len(headers)))
+            return ws
+    except APIError as e:
+        st.error(f"Google Sheets API error opening/creating '{title}'.")
+        st.code(str(e))
+        st.stop()
 def ws_to_df(ws) -> pd.DataFrame:
     vals = ws.get_all_values()
     if len(vals) <= 1:
