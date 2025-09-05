@@ -67,9 +67,93 @@ hr {{ border: none; border-top: 1px solid rgba(255,255,255,.08); }}
     unsafe_allow_html=True,
 )
 
+<<<<<<< HEAD
+=======
 # ===================== CONSTANTS / UTILS =====================
 TRUE_LIKE = {"true", "yes", "y", "1"}
+>>>>>>> b798bb98d51f740e6d1cec7e50dadc0eaa4bf28e
 
+<<<<<<< HEAD
+    # ---- BUSINESS LISTINGS (approve / reject / extend) ----
+    st.markdown("### Resident Business Listings — Pending")
+    dfd = ws_to_df(ws_dir)
+
+    if dfd.empty:
+        st.info("No business listings yet.")
+    else:
+        pend_b = dfd[dfd["Approved"].astype(str).str.upper() != "TRUE"]
+        if pend_b.empty:
+            st.success("No pending business listings.")
+        else:
+            for _, row in pend_b.iterrows():
+                with st.expander(f"{row.get('Business_Name','(no business)')} • {row.get('Member_Email','')}"):
+                    st.write(dict(row))
+                    c1, c2, c3 = st.columns(3)
+
+                    with c1:
+                        if st.button("Approve business", key=f"b_ap_{row['Listing_ID']}"):
+                            approve_by_id(ws_dir, "Listing_ID", row["Listing_ID"], DIR_HEADERS)
+                            st.success("Approved.")
+                            _safe_rerun()
+
+                    with c2:
+                        if st.button("Reject business", key=f"b_rj_{row['Listing_ID']}"):
+                            reject_by_id(ws_dir, "Listing_ID", row["Listing_ID"])
+                            st.warning("Rejected.")
+                            _safe_rerun()
+
+                    with c3:
+                        if st.button("Extend expiry", key=f"b_ex_{row['Listing_ID']}"):
+                            extend_by_id(ws_dir, "Listing_ID", row["Listing_ID"], extra_days=30)
+                            st.info("Extended by 30 days.")
+                            _safe_rerun()
+
+    # ---- VENDORS (approve / reject / extend) ----
+    st.markdown("### Vicinity Vendors — Pending")
+    dfv = ws_to_df(ws_ven)
+    if dfv.empty:
+        st.info("No vendors.")
+    else:
+        pend_v = dfv[dfv["Approved"].str.upper() != "TRUE"] if "Approved" in dfv else pd.DataFrame()
+        if pend_v.empty:
+            st.success("No pending vendor submissions.")
+        else:
+            for _, row in pend_v.iterrows():
+                with st.expander(f"{row.get('Vendor_Name','')} · {row.get('Member_Email','')}"):
+                    st.write(dict(row))
+                    c1, c2, c3 = st.columns([1,1,2])
+                    with c1:
+                        if st.button("Approve", key=f"v_ap_{row['Vendor_ID']}"):
+                            approve_by_id(ws_ven, "Vendor_ID", row["Vendor_ID"], VEN_HEADERS)
+                            st.success("Approved.")
+                            st.experimental_rerun()
+                    with c2:
+                        if st.button("Reject", key=f"v_rj_{row['Vendor_ID']}"):
+                            reject_by_id(ws_ven, "Vendor_ID", row["Vendor_ID"], VEN_HEADERS)
+                            st.warning("Rejected.")
+                            st.experimental_rerun()
+                    with c3:
+                        extra = st.number_input("Extend days", min_value=0, max_value=365, value=0, key=f"v_ex_{row['Vendor_ID']}")
+                        if st.button("Apply extension", key=f"v_ex_btn_{row['Vendor_ID']}"):
+                            extend_expiry(ws_ven, "Vendor_ID", row["Vendor_ID"], VEN_HEADERS, extra)
+                            st.success("Expiry extended.")
+                            st.experimental_rerun()
+
+    st.divider()
+    st.markdown("### Export CSV")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if not dfd.empty:
+            st.download_button("Businesses.csv", dfd.to_csv(index=False).encode(), "businesses.csv")
+    with col2:
+        if not dfv.empty:
+            st.download_button("Vendors.csv", dfv.to_csv(index=False).encode(), "vendors.csv")
+    with col3:
+        if not dfm.empty:
+            st.download_button("Members.csv", dfm.to_csv(index=False).encode(), "members.csv")
+
+# --------------------------- GOOGLE SHEETS CONNECTION -------------------------
+=======
 def _now_iso() -> str:
     return dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
@@ -94,6 +178,7 @@ APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
 SHEET_URL    = st.secrets.get("SHEET_URL", "")
 
 # ===================== GOOGLE AUTH + OPEN SHEET =====================
+>>>>>>> b798bb98d51f740e6d1cec7e50dadc0eaa4bf28e
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
