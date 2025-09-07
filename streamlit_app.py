@@ -140,55 +140,48 @@ CATEGORIES: Dict[str, List[str]] = {
 }
 
 # -------------------- ENSURE WORKSHEETS & HEADERS --------------------
+# --- robust / low-read worksheet getter with retries ---
+import time
+from random import random
+from gspread.exceptions import WorksheetNotFound, APIError
+
 def ensure_ws(sh, title: str, headers: list[str]):
-    """Ensure a worksheet exists and row 1 has headers."""
+    """
+    Get (or create) a worksheet named `title` with minimal API usage.
+    - Tries a few times (handles 429/5xx).
+    - Creates the sheet if missing.
+    - Writes headers ONLY if the first row is empty.
+    """
+    # small helper: do a call with retries
+    def _try(call, *args, **kwargs):
+        for attempt in range(4):  # 0,1,2,3
+            try:
+                return call(*args, **kwargs)
+            except APIError as e:
+                # back-off: 0.4s, 0.8s, 1.6s, 3.2s (+ jitter)
+                sleep_s = (0.4 * (2**attempt)) + (random() * 0.2)
+                time.sleep(sleep_s)
+                last = e
+        # if we’re here, all retries failed
+        raise last
+
+    # 1) get or create the worksheet
     try:
-        ws = sh.worksheet(title)
+        ws = _try(sh.worksheet, title)
     except WorksheetNotFound:
-        ws = sh.add_worksheet(title=title, rows=1000, cols=max(26, len(headers)))
-        ws.append_row(headers)
-        return ws
-    # Ensure headers exist in row 1
+        ws = _try(sh.add_worksheet, title=title, rows=1000, cols=max(26, len(headers)))
+
+    # 2) ensure headers (only if row 1 is empty)
     try:
-        if not ws.row_values(1):
-            ws.update("A1", [headers])
+        row1 = _try(ws.row_values, 1)
+        if not row1:
+            _try(ws.update, "A1", [headers])
     except APIError:
+        # ignore header write failure; app can still function
         pass
+
     return ws
 
-ws_members  = ensure_ws(sh, "Members",           MEM_HEADERS)
-ws_dir      = ensure_ws(sh, "Business_Listings", DIR_HEADERS)
-ws_ven      = ensure_ws(sh, "Vicinity_Vendors",  VEN_HEADERS)
-ws_show     = ensure_ws(sh, "Showcase",          SHOW_HEADERS)
-ws_rate     = ensure_ws(sh, "Ratings",           RATE_HEADERS)
-ws_supp     = ensure_ws(sh, "Support_Tickets",   SUPP_HEADERS)
-
-# -------------------- CACHED READS (avoid 429 rate limits) --------------------
-@st.cache_data(ttl=30)
-def read_df(tab: str) -> pd.DataFrame:
-    try:
-        ws = sh.worksheet(tab)
-        vals = ws.get_all_values()
-        if not vals:
-            return pd.DataFrame()
-        if len(vals) == 1:
-            return pd.DataFrame(columns=vals[0])
-        return pd.DataFrame(vals[1:], columns=vals[0])
-    except Exception:
-        return pd.DataFrame()
-
-def df_public(df: pd.DataFrame, approved_col="Approved", expires_col: Optional[str]="Expires_On") -> pd.DataFrame:
-    if df is None or df.empty:
-        return pd.DataFrame()
-    d = df.copy()
-    if approved_col in d.columns:
-        d["_ok"] = d[approved_col].astype(str).str.strip().str.lower().isin(TRUE_LIKE)
-        d = d[d["_ok"]==True].drop(columns=["_ok"])
-    if expires_col and (expires_col in d.columns):
-        d["_exp"] = pd.to_datetime(d[expires_col], errors="coerce", utc=True)
-        now = pd.Timestamp.utcnow()
-        d = d[(d["_exp"].isna()) | (d["_exp"] >= now)].drop(columns=["_exp"])
-    return d.reset_index(drop=True)
 
 # -------------------- ADMIN AUTH --------------------
 def is_admin() -> bool:
