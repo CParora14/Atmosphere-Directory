@@ -1,8 +1,9 @@
 # Atmosphere Society — Community Hub
 # Full app: Showcase • Directory • Vendors • Support • Admin
 from __future__ import annotations
-import uuid, datetime as dt
+import uuid, datetime as dt, time
 from typing import Optional, Dict, List
+from random import random
 
 import streamlit as st
 import gspread
@@ -139,49 +140,68 @@ CATEGORIES: Dict[str, List[str]] = {
     "Other": ["Other"]
 }
 
-# -------------------- ENSURE WORKSHEETS & HEADERS --------------------
-# --- robust / low-read worksheet getter with retries ---
-import time
-from random import random
-from gspread.exceptions import WorksheetNotFound, APIError
+# -------------------- ENSURE WORKSHEETS & HEADERS (with retry/backoff) --------------------
+def _retry(call, *args, **kwargs):
+    last = None
+    for attempt in range(4):  # 0..3
+        try:
+            return call(*args, **kwargs)
+        except APIError as e:
+            last = e
+            time.sleep((0.4 * (2**attempt)) + (random() * 0.2))
+    raise last
 
 def ensure_ws(sh, title: str, headers: list[str]):
     """
     Get (or create) a worksheet named `title` with minimal API usage.
-    - Tries a few times (handles 429/5xx).
-    - Creates the sheet if missing.
-    - Writes headers ONLY if the first row is empty.
+    Creates the sheet if missing; writes headers if the first row is empty.
     """
-    # small helper: do a call with retries
-    def _try(call, *args, **kwargs):
-        for attempt in range(4):  # 0,1,2,3
-            try:
-                return call(*args, **kwargs)
-            except APIError as e:
-                # back-off: 0.4s, 0.8s, 1.6s, 3.2s (+ jitter)
-                sleep_s = (0.4 * (2**attempt)) + (random() * 0.2)
-                time.sleep(sleep_s)
-                last = e
-        # if we’re here, all retries failed
-        raise last
-
-    # 1) get or create the worksheet
     try:
-        ws = _try(sh.worksheet, title)
+        ws = _retry(sh.worksheet, title)
     except WorksheetNotFound:
-        ws = _try(sh.add_worksheet, title=title, rows=1000, cols=max(26, len(headers)))
-
-    # 2) ensure headers (only if row 1 is empty)
+        ws = _retry(sh.add_worksheet, title=title, rows=1000, cols=max(26, len(headers)))
     try:
-        row1 = _try(ws.row_values, 1)
+        row1 = _retry(ws.row_values, 1)
         if not row1:
-            _try(ws.update, "A1", [headers])
+            _retry(ws.update, "A1", [headers])
     except APIError:
-        # ignore header write failure; app can still function
         pass
-
     return ws
 
+# --- OPEN ALL REQUIRED SHEETS ONCE ---
+ws_members  = ensure_ws(sh, "Members",           MEM_HEADERS)
+ws_dir      = ensure_ws(sh, "Business_Listings", DIR_HEADERS)
+ws_ven      = ensure_ws(sh, "Vicinity_Vendors",  VEN_HEADERS)
+ws_show     = ensure_ws(sh, "Showcase",          SHOW_HEADERS)
+ws_rate     = ensure_ws(sh, "Ratings",           RATE_HEADERS)
+ws_supp     = ensure_ws(sh, "Support_Tickets",   SUPP_HEADERS)
+
+# -------------------- CACHED READS (helps avoid 429 rate limits) --------------------
+@st.cache_data(ttl=30)
+def read_df(tab: str) -> pd.DataFrame:
+    try:
+        ws = sh.worksheet(tab)
+        vals = ws.get_all_values()
+        if not vals:
+            return pd.DataFrame()
+        if len(vals) == 1:
+            return pd.DataFrame(columns=vals[0])
+        return pd.DataFrame(vals[1:], columns=vals[0])
+    except Exception:
+        return pd.DataFrame()
+
+def df_public(df: pd.DataFrame, approved_col="Approved", expires_col: Optional[str]="Expires_On") -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    d = df.copy()
+    if approved_col in d.columns:
+        d["_ok"] = d[approved_col].astype(str).str.strip().str.lower().isin(TRUE_LIKE)
+        d = d[d["_ok"]==True].drop(columns=["_ok"])
+    if expires_col and (expires_col in d.columns):
+        d["_exp"] = pd.to_datetime(d[expires_col], errors="coerce", utc=True)
+        now = pd.Timestamp.utcnow()
+        d = d[(d["_exp"].isna()) | (d["_exp"] >= now)].drop(columns=["_exp"])
+    return d.reset_index(drop=True)
 
 # -------------------- ADMIN AUTH --------------------
 def is_admin() -> bool:
@@ -202,6 +222,17 @@ def admin_login_ui():
                 st.error("❌ Wrong credentials.")
 
 # -------------------- MEMBER VERIFY SIGN-IN (PINNED) --------------------
+def member_is_approved(email: str) -> bool:
+    if not email:
+        return False
+    df = read_df("Members")
+    if df.empty or "Email" not in df:
+        return False
+    m = df[df["Email"].str.strip().str.lower() == email.strip().lower()]
+    if m.empty:
+        return False
+    return m["Approved"].astype(str).str.strip().str.lower().isin(TRUE_LIKE).any()
+
 def member_bar():
     st.markdown("<hr/>", unsafe_allow_html=True)
     with st.container():
@@ -218,17 +249,6 @@ def member_bar():
                 else:
                     st.warning("Not found or not approved yet. Register or wait for approval.")
     st.markdown("<hr/>", unsafe_allow_html=True)
-
-def member_is_approved(email: str) -> bool:
-    if not email:
-        return False
-    df = read_df("Members")
-    if df.empty or "Email" not in df:
-        return False
-    m = df[df["Email"].str.strip().str.lower() == email.strip().lower()]
-    if m.empty:
-        return False
-    return m["Approved"].astype(str).str.strip().str.lower().isin(TRUE_LIKE).any()
 
 # -------------------- WRITE HELPERS --------------------
 def _append_row(ws, data: dict, headers: list[str]):
@@ -388,6 +408,7 @@ def header():
             "<div>Showcase • Directory • Vendors • Support</div></div>",
             unsafe_allow_html=True
         )
+
 header()
 
 # -------------------- PINNED MEMBER SIGN-IN --------------------
