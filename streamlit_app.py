@@ -141,40 +141,111 @@ CATEGORIES: Dict[str, List[str]] = {
 }
 
 # -------------------- ENSURE WORKSHEETS & HEADERS (with retry/backoff) --------------------
+# -------------------- ENSURE WORKSHEETS & HEADERS (resilient) --------------------
+import time
+from random import random
+
+IS_EDIT_MODE = str(st.secrets.get("EDIT_MODE", "")).strip().lower() == "true"
+
 def _retry(call, *args, **kwargs):
+    """Retry helper with exponential backoff for transient Google errors."""
     last = None
-    for attempt in range(4):  # 0..3
+    for attempt in range(5):  # 0..4
         try:
             return call(*args, **kwargs)
         except APIError as e:
             last = e
-            time.sleep((0.4 * (2**attempt)) + (random() * 0.2))
-    raise last
+            # backoff: 0.3, 0.6, 1.2, 2.4, 4.8 (+ jitter)
+            sleep_s = (0.3 * (2 ** attempt)) + (random() * 0.2)
+            time.sleep(sleep_s)
+    raise last  # all retries failed
 
-def ensure_ws(sh, title: str, headers: list[str]):
-    """
-    Get (or create) a worksheet named `title` with minimal API usage.
-    Creates the sheet if missing; writes headers if the first row is empty.
-    """
-    try:
-        ws = _retry(sh.worksheet, title)
-    except WorksheetNotFound:
-        ws = _retry(sh.add_worksheet, title=title, rows=1000, cols=max(26, len(headers)))
+def _ensure_headers(ws, headers):
+    """Write headers only if first row is empty; ignore errors."""
     try:
         row1 = _retry(ws.row_values, 1)
         if not row1:
             _retry(ws.update, "A1", [headers])
     except APIError:
         pass
-    return ws
 
-# --- OPEN ALL REQUIRED SHEETS ONCE ---
-ws_members  = ensure_ws(sh, "Members",           MEM_HEADERS)
-ws_dir      = ensure_ws(sh, "Business_Listings", DIR_HEADERS)
-ws_ven      = ensure_ws(sh, "Vicinity_Vendors",  VEN_HEADERS)
-ws_show     = ensure_ws(sh, "Showcase",          SHOW_HEADERS)
-ws_rate     = ensure_ws(sh, "Ratings",           RATE_HEADERS)
-ws_supp     = ensure_ws(sh, "Support_Tickets",   SUPP_HEADERS)
+def _get_or_create_worksheets(sh, required: list[tuple[str, list[str]]]):
+    """
+    Do a single metadata fetch (sh.worksheets()) and then create any missing tabs.
+    Returns dict: title -> Worksheet
+    """
+    title_to_ws = {}
+    try:
+        existing = {ws.title: ws for ws in _retry(sh.worksheets)}
+    except APIError as e:
+        # If even listing fails, show a soft message and continue to EDIT mode
+        st.warning("Google Sheets not reachable right now. Running in read-only UI.")
+        raise e
+
+    for title, headers in required:
+        if title in existing:
+            ws = existing[title]
+        else:
+            # create missing tab with fewer calls
+            ws = _retry(sh.add_worksheet, title=title, rows=1000, cols=max(26, len(headers)))
+        _ensure_headers(ws, headers)
+        title_to_ws[title] = ws
+    return title_to_ws
+
+REQUIRED_TABS = [
+    ("Members",           MEM_HEADERS),
+    ("Business_Listings", DIR_HEADERS),
+    ("Vicinity_Vendors",  VEN_HEADERS),
+    ("Showcase",          SHOW_HEADERS),
+    ("Ratings",           RATE_HEADERS),
+    ("Support_Tickets",   SUPP_HEADERS),
+]
+
+# If you’re only changing colors/images, skip Google for stability.
+if IS_EDIT_MODE:
+    st.info("🚧 EDIT MODE is ON — Google Sheets calls are skipped so you can safely tweak UI.")
+    ws_members = ws_dir = ws_ven = ws_show = ws_rate = ws_supp = None
+
+    @st.cache_data(ttl=1)
+    def read_df(tab: str) -> pd.DataFrame:
+        # Return empty frames in edit mode
+        if tab == "Business_Listings":
+            # You can return a tiny sample here if you want to see cards in preview.
+            return pd.DataFrame(columns=DIR_HEADERS)
+        return pd.DataFrame()
+
+else:
+    try:
+        tabs_map = _get_or_create_worksheets(sh, REQUIRED_TABS)
+        ws_members  = tabs_map["Members"]
+        ws_dir      = tabs_map["Business_Listings"]
+        ws_ven      = tabs_map["Vicinity_Vendors"]
+        ws_show     = tabs_map["Showcase"]
+        ws_rate     = tabs_map["Ratings"]
+        ws_supp     = tabs_map["Support_Tickets"]
+    except Exception as e:
+        st.error("⚠️ Could not open or create worksheets right now. Please try again shortly.")
+        st.caption("Tip: turn EDIT_MODE = \"true\" in Secrets to keep the app up while editing UI.")
+        st.stop()
+
+    # Cached read uses a single call per tab and respects TTL to avoid 429
+    @st.cache_data(ttl=45)
+    def read_df(tab: str) -> pd.DataFrame:
+        try:
+            ws = {
+                "Members": ws_members, "Business_Listings": ws_dir, "Vicinity_Vendors": ws_ven,
+                "Showcase": ws_show, "Ratings": ws_rate, "Support_Tickets": ws_supp
+            }.get(tab)
+            if ws is None:
+                return pd.DataFrame()
+            vals = _retry(ws.get_all_values)
+            if not vals:
+                return pd.DataFrame()
+            if len(vals) == 1:
+                return pd.DataFrame(columns=vals[0])
+            return pd.DataFrame(vals[1:], columns=vals[0])
+        except Exception:
+            return pd.DataFrame()
 
 # -------------------- CACHED READS (helps avoid 429 rate limits) --------------------
 @st.cache_data(ttl=30)
