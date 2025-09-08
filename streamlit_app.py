@@ -36,7 +36,7 @@ st.markdown(
   --brand:{PRIMARY}; --brand2:{PRIMARY_2}; --ink:{INK}; --card:{CARD_BG}; --page:{PAGE_BG};
 }}
 html, body, [data-testid="stAppViewContainer"] {{
-  background: linear-gradient(180deg, rgba(0,0,0,0.50), rgba(0,0,0,0.75)) {backdrop_css};
+  background: linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.45)) {backdrop_css};
   background-size: cover; background-position: center; background-attachment: fixed;
   color:#EAF2FA!important;
 }}
