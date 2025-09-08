@@ -10,19 +10,17 @@ from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound, APIError
 
 # -------------------- BRAND / THEME --------------------
+# -------------------- BRAND / THEME (logo + backdrop from Secrets) --------------------
 PRIMARY   = "#18B8CB"
 PRIMARY_2 = "#6BC6FF"
 INK       = "#0C2AAA"
-CARD_BG   = "#0E1C2B"
-PAGE_BG   = "#0A1522"
+CARD_BG   = "rgba(14,28,43,0.85)"   # slightly translucent for better readability
 
-# Logo / backdrop come from Streamlit Secrets so you can change them without editing code
-# In Streamlit Cloud: App → Settings → Secrets
-#   LOGO_URL = "https://..."
-#   BACKDROP_URL = "https://raw.githubusercontent.com/.../Wadhwaatmosphere1%20Image.webp"
+# Load from Secrets (set these in Streamlit → Manage app → Settings → Secrets)
 LOGO_URL     = st.secrets.get("LOGO_URL", "").strip()
 BACKDROP_URL = st.secrets.get("BACKDROP_URL", "").strip()
 
+# Page meta
 st.set_page_config(
     page_title="Atmosphere Society — Community Hub",
     page_icon="🏡",
@@ -30,6 +28,84 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# --- BACKDROP (reliable ::before layer; no debug caption) ---
+st.markdown(f"""
+<style>
+/* Clear any previous backgrounds */
+html, body, .stApp, .stApp > div[data-testid="stAppViewContainer"] {{
+  background: transparent !important;
+}}
+
+/* Full-screen background image behind everything */
+.stApp::before {{
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(180deg, rgba(0,0,0,0.30), rgba(0,0,0,0.55)),
+    url('{BACKDROP_URL}');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}}
+
+.block-container {{ padding-top: 0.5rem; padding-bottom: 2rem; max-width: 1200px; }}
+[data-testid="stHeader"] {{ background: transparent; }}
+
+:root {{
+  --brand:{PRIMARY}; --brand2:{PRIMARY_2}; --ink:{INK}; --card:{CARD_BG};
+}}
+
+.stTabs [data-baseweb="tab"] {{ color:#EAF2FA; font-weight:600; }}
+.stTabs [aria-selected="true"] {{
+  background: linear-gradient(90deg, var(--brand), var(--brand2))!important;
+  color:#001018!important; border-radius:10px;
+}}
+
+.banner {{
+  width:100%; padding:18px 22px; border-radius:18px;
+  background: linear-gradient(135deg, {PRIMARY} 0%, {PRIMARY_2} 100%);
+  color:#001018; box-shadow:0 10px 30px rgba(0,0,0,.35);
+}}
+
+.card {{
+  background: var(--card);
+  border-radius: 16px;
+  padding: 16px 18px;
+  border:1px solid rgba(255,255,255,.06)
+}}
+
+.badge {{ padding:2px 8px; border-radius:100px; font-size:12px;
+  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08) }}
+
+.small-dim {{ color:#b9c8d8; font-size:12px; }}
+hr {{ border: none; border-top: 1px solid rgba(255,255,255,.15); margin: 0.6rem 0 1rem; }}
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------- HEADER (logo on left, banner on right; no tiny badge) --------------------
+def header():
+    left, right = st.columns([1, 9], vertical_alignment="center")
+    with left:
+        if LOGO_URL:
+            # Fit the logo nicely without pushing content
+            st.image(LOGO_URL, use_container_width=True)
+        else:
+            # If no logo provided, keep space minimal (don’t show the old badge)
+            st.empty()
+
+    with right:
+        st.markdown(
+            "<div class='banner'>"
+            "<h2 style='margin:0'>Atmosphere Society — Community Hub</h2>"
+            "<div>Showcase • Directory • Vendors • Support</div>"
+            "</div>",
+            unsafe_allow_html=True
+        )
+
+# Call once near the top of the app
+header()
 # -------------------- RELIABLE FULL-SCREEN BACKDROP --------------------
 # ---------------- BACKDROP (reliable ::before layer) ----------------
 bg_url = (st.secrets.get("BACKDROP_URL", "") or "").strip()
