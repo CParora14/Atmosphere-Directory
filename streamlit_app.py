@@ -12,56 +12,35 @@ from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound, APIError
 
 # -------------------- BRAND / THEME (optional backdrop/logo via Secrets) --------------------
-PRIMARY   = "#18B8CB"
-PRIMARY_2 = "#6BC6FF"
-INK       = "#0C2AAA"
-CARD_BG   = "#0E1C2B"
-PAGE_BG   = "#0A1522"
+# --- BACKDROP (reliable ::before layer) ---
+bg_url = st.secrets.get("BACKDROP_URL", "").strip()
 
-LOGO_URL     = st.secrets.get("LOGO_URL", "")
-BACKDROP_URL = st.secrets.get("BACKDROP_URL", "")
-
-st.set_page_config(
-    page_title="Atmosphere Society — Community Hub",
-    page_icon="🏡",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
-
-backdrop_css = f", url('{BACKDROP_URL}')" if BACKDROP_URL else ""
-st.markdown(
-    f"""
+st.markdown(f"""
 <style>
-:root {{
-  --brand:{PRIMARY}; --brand2:{PRIMARY_2}; --ink:{INK}; --card:{CARD_BG}; --page:{PAGE_BG};
+/* Clear any previous backgrounds */
+html, body, .stApp, .stApp > div[data-testid="stAppViewContainer"] {{
+  background: transparent !important;
 }}
-html, body, [data-testid="stAppViewContainer"] {{
-  background: linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.45)) {backdrop_css};
-  background-size: cover; background-position: center; background-attachment: fixed;
-  color:#EAF2FA!important;
+
+/* Full-screen background image behind everything */
+.stApp::before {{
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.45)),
+    url('{bg_url}');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
 }}
-.block-container {{ padding-top:1rem; padding-bottom:2rem; max-width:1200px; }}
-[data-testid="stHeader"] {{ background: transparent; }}
-.stTabs [data-baseweb="tab"] {{ color:#EAF2FA; font-weight:600; }}
-.stTabs [aria-selected="true"] {{
-  background: linear-gradient(90deg, var(--brand), var(--brand2))!important;
-  color:#001018!important; border-radius:10px;
-}}
-.banner {{
-  width:100%; padding:18px 22px; border-radius:18px;
-  background: linear-gradient(135deg, {PRIMARY} 0%, {PRIMARY_2} 100%);
-  color:#001018; box-shadow:0 10px 30px rgba(0,0,0,.25);
-}}
-.card {{ background:var(--card); border-radius:16px; padding:16px 18px;
-  border:1px solid rgba(255,255,255,.06) }}
-.badge {{ padding:2px 8px; border-radius:100px; font-size:12px;
-  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08) }}
-.small-dim {{ color:#b9c8d8; font-size:12px; }}
-hr {{ border: none; border-top: 1px solid rgba(255,255,255,.15); margin: 0.6rem 0 1rem; }}
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
+
+# (Optional) sanity check: shows the URL the app is using
+st.caption(f"Backdrop URL: {bg_url or '(not set)'}")
+
 
 # -------------------- CONSTANTS / UTILS --------------------
 TRUE_LIKE = {"true", "yes", "y", "1"}
