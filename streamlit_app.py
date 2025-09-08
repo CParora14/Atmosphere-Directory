@@ -1,9 +1,7 @@
-# Atmosphere Society — Community Hub
-# Full app: Showcase • Directory • Vendors • Support • Admin
+# ================== TOP SECTION (imports + theme + backdrop + header) ==================
 from __future__ import annotations
-import uuid, datetime as dt, time
+import uuid, datetime as dt
 from typing import Optional, Dict, List
-from random import random
 
 import streamlit as st
 import gspread
@@ -11,15 +9,17 @@ import pandas as pd
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound, APIError
 
-# ===================== BRAND / THEME (logo + backdrop from Secrets) =====================
+# -------------------- BRAND / THEME --------------------
 PRIMARY   = "#18B8CB"
 PRIMARY_2 = "#6BC6FF"
 INK       = "#0C2AAA"
-CARD_BG   = "rgba(14,28,43,0.85)"   # translucent for readability
+CARD_BG   = "rgba(14,28,43,0.85)"   # translucent so backdrop shows
 
+# Load from Secrets
 LOGO_URL     = st.secrets.get("LOGO_URL", "").strip()
 BACKDROP_URL = st.secrets.get("BACKDROP_URL", "").strip()
 
+# Page meta
 st.set_page_config(
     page_title="Atmosphere Society — Community Hub",
     page_icon="🏡",
@@ -27,12 +27,15 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ---- Single, reliable backdrop (no debug caption) ----
+# -------------------- BACKDROP --------------------
 st.markdown(f"""
 <style>
+/* Clear any previous backgrounds */
 html, body, .stApp, .stApp > div[data-testid="stAppViewContainer"] {{
   background: transparent !important;
 }}
+
+/* Full-screen background image */
 .stApp::before {{
   content: "";
   position: fixed;
@@ -45,19 +48,14 @@ html, body, .stApp, .stApp > div[data-testid="stAppViewContainer"] {{
   background-position: center;
   background-attachment: fixed;
 }}
+
 .block-container {{ padding-top: 0.5rem; padding-bottom: 2rem; max-width: 1200px; }}
 [data-testid="stHeader"] {{ background: transparent; }}
-:root {{ --brand:{PRIMARY}; --brand2:{PRIMARY_2}; --ink:{INK}; --card:{CARD_BG}; }}
-.stTabs [data-baseweb="tab"] {{ color:#EAF2FA; font-weight:600; }}
-.stTabs [aria-selected="true"] {{
-  background: linear-gradient(90deg, var(--brand), var(--brand2))!important;
-  color:#001018!important; border-radius:10px;
+
+:root {{
+  --brand:{PRIMARY}; --brand2:{PRIMARY_2}; --ink:{INK}; --card:{CARD_BG};
 }}
-.banner {{
-  width:100%; padding:18px 22px; border-radius:18px;
-  background: linear-gradient(135deg, {PRIMARY} 0%, {PRIMARY_2} 100%);
-  color:#001018; box-shadow:0 10px 30px rgba(0,0,0,.35);
-}}
+
 .card {{
   background: var(--card);
   border-radius: 16px;
@@ -71,22 +69,61 @@ hr {{ border: none; border-top: 1px solid rgba(255,255,255,.15); margin: 0.6rem 
 </style>
 """, unsafe_allow_html=True)
 
-# ---- Header (logo on left, banner on right; no tiny chip) ----
+# -------------------- TRANSPARENCY OVERRIDES --------------------
+st.markdown("""
+<style>
+/* Banner transparent */
+.banner{
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  color: #ffffff !important;
+}
+.banner h2{ color:#ffffff !important; }
+
+/* Tabs transparent */
+.stTabs [data-baseweb="tab"]{
+  background: transparent !important;
+  color: #EAF2FA !important;
+  border-radius: 0 !important;
+}
+.stTabs [data-baseweb="tab"]:hover{
+  background: transparent !important;
+}
+.stTabs [aria-selected="true"]{
+  background: transparent !important;
+  color: #ffffff !important;
+  border-bottom: 2px solid var(--brand) !important;
+  border-radius: 0 !important;
+}
+
+/* Optional readability */
+.banner h2, .banner div, .stTabs [data-baseweb="tab"]{
+  text-shadow: 0 1px 2px rgba(0,0,0,.45);
+}
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------- HEADER --------------------
 def header():
-    left, right = st.columns([1, 9], vertical_alignment="center")
-    with left:
+    cols = st.columns([1,10])
+    with cols[0]:
         if LOGO_URL:
             st.image(LOGO_URL, use_container_width=True)
         else:
-            st.empty()
-    with right:
+            st.markdown("<div class='badge'>Atmosphere</div>", unsafe_allow_html=True)
+    with cols[1]:
         st.markdown(
             "<div class='banner'><h2 style='margin:0'>Atmosphere Society — Community Hub</h2>"
             "<div>Showcase • Directory • Vendors • Support</div></div>",
             unsafe_allow_html=True
         )
 
+# Call header once
 header()
+
+# ================== END TOP SECTION ==================
+
 
 # ===================== UTILS =====================
 TRUE_LIKE = {"true", "yes", "y", "1"}
