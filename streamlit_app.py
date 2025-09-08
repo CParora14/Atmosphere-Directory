@@ -1,7 +1,11 @@
-# ================== TOP SECTION (imports + theme + backdrop + header) ==================
+# Atmosphere Society — Community Hub (full app)
+# Showcase • Directory • Vendors • Support • Register • Admin
+# Paste this entire file as streamlit_app.py
+
 from __future__ import annotations
-import uuid, datetime as dt
+import uuid, datetime as dt, time
 from typing import Optional, Dict, List
+from random import random
 
 import streamlit as st
 import gspread
@@ -9,17 +13,16 @@ import pandas as pd
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound, APIError
 
-# -------------------- BRAND / THEME --------------------
+# ===================== THEME / LOGO / BACKDROP =====================
 PRIMARY   = "#18B8CB"
 PRIMARY_2 = "#6BC6FF"
-INK       = "#0C2AAA"
-CARD_BG   = "rgba(14,28,43,0.85)"   # translucent so backdrop shows
+INK       = "#EAF2FA"      # text
+CARD_BG   = "rgba(10,16,28,0.75)"   # translucent cards on photo
+BORDER    = "rgba(255,255,255,0.10)"
 
-# Load from Secrets
 LOGO_URL     = st.secrets.get("LOGO_URL", "").strip()
 BACKDROP_URL = st.secrets.get("BACKDROP_URL", "").strip()
 
-# Page meta
 st.set_page_config(
     page_title="Atmosphere Society — Community Hub",
     page_icon="🏡",
@@ -27,20 +30,19 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# -------------------- BACKDROP --------------------
-st.markdown(f"""
+# One clean backdrop block (no duplicates)
+st.markdown(
+    f"""
 <style>
-/* Clear any previous backgrounds */
+/* Clear any prior background */
 html, body, .stApp, .stApp > div[data-testid="stAppViewContainer"] {{
   background: transparent !important;
 }}
 
-/* Full-screen background image */
+/* Fullscreen photo behind everything */
 .stApp::before {{
   content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
+  position: fixed; inset: 0; z-index: -1;
   background-image:
     linear-gradient(180deg, rgba(0,0,0,0.30), rgba(0,0,0,0.55)),
     url('{BACKDROP_URL}');
@@ -49,83 +51,70 @@ html, body, .stApp, .stApp > div[data-testid="stAppViewContainer"] {{
   background-attachment: fixed;
 }}
 
-.block-container {{ padding-top: 0.5rem; padding-bottom: 2rem; max-width: 1200px; }}
-[data-testid="stHeader"] {{ background: transparent; }}
-
 :root {{
-  --brand:{PRIMARY}; --brand2:{PRIMARY_2}; --ink:{INK}; --card:{CARD_BG};
+  --ink:{INK};
+  --card:{CARD_BG};
+  --border:{BORDER};
+}}
+
+.block-container {{
+  padding-top: 0.5rem;
+  padding-bottom: 2rem;
+  max-width: 1200px;
+  color: var(--ink);
+}}
+
+[data-testid="stHeader"] {{ background: transparent !important; }}
+
+/* Tabs: remove colored backgrounds; subtle underline on active */
+.stTabs [data-baseweb="tab"] {{
+  color: var(--ink);
+  font-weight: 600;
+  background: transparent !important;
+  border-radius: 0 !important;
+  border-bottom: 2px solid transparent;
+}}
+.stTabs [aria-selected="true"] {{
+  border-bottom: 2px solid {PRIMARY_2} !important;
+  background: transparent !important;
+  color: var(--ink) !important;
 }}
 
 .card {{
   background: var(--card);
-  border-radius: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
   padding: 16px 18px;
-  border:1px solid rgba(255,255,255,.06)
 }}
-.badge {{ padding:2px 8px; border-radius:100px; font-size:12px;
-  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08) }}
-.small-dim {{ color:#b9c8d8; font-size:12px; }}
-hr {{ border: none; border-top: 1px solid rgba(255,255,255,.15); margin: 0.6rem 0 1rem; }}
+.badge {{
+  padding: 2px 8px; border-radius: 100px; font-size: 12px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid var(--border);
+}}
+hr {{ border: none; border-top: 1px solid var(--border); margin: 0.6rem 0 1rem; }}
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# -------------------- TRANSPARENCY OVERRIDES --------------------
-st.markdown("""
-<style>
-/* Banner transparent */
-.banner{
-  background: transparent !important;
-  box-shadow: none !important;
-  border: 0 !important;
-  color: #ffffff !important;
-}
-.banner h2{ color:#ffffff !important; }
-
-/* Tabs transparent */
-.stTabs [data-baseweb="tab"]{
-  background: transparent !important;
-  color: #EAF2FA !important;
-  border-radius: 0 !important;
-}
-.stTabs [data-baseweb="tab"]:hover{
-  background: transparent !important;
-}
-.stTabs [aria-selected="true"]{
-  background: transparent !important;
-  color: #ffffff !important;
-  border-bottom: 2px solid var(--brand) !important;
-  border-radius: 0 !important;
-}
-
-/* Optional readability */
-.banner h2, .banner div, .stTabs [data-baseweb="tab"]{
-  text-shadow: 0 1px 2px rgba(0,0,0,.45);
-}
-</style>
-""", unsafe_allow_html=True)
-
-# -------------------- HEADER --------------------
+# -------------------- Header (logo + plain title, no colored banner) --------------------
 def header():
-    cols = st.columns([1,10])
-    with cols[0]:
+    left, right = st.columns([1, 9], vertical_alignment="center")
+    with left:
         if LOGO_URL:
             st.image(LOGO_URL, use_container_width=True)
         else:
-            st.markdown("<div class='badge'>Atmosphere</div>", unsafe_allow_html=True)
-    with cols[1]:
+            st.markdown("<div style='height:68px'></div>", unsafe_allow_html=True)
+    with right:
         st.markdown(
-            "<div class='banner'><h2 style='margin:0'>Atmosphere Society — Community Hub</h2>"
-            "<div>Showcase • Directory • Vendors • Support</div></div>",
+            "<h2 style='margin:4px 0 6px 0; font-weight:700'>Atmosphere Society — Community Hub</h2>"
+            "<div style='opacity:.9'>Showcase • Directory • Vendors • Support</div>",
             unsafe_allow_html=True
         )
 
-# Call header once
 header()
 
-# ================== END TOP SECTION ==================
-
-
-# ===================== UTILS =====================
+# ===================== SMALL UTILS =====================
 TRUE_LIKE = {"true", "yes", "y", "1"}
 
 def _now_iso() -> str:
@@ -146,13 +135,13 @@ def clear_cache():
     except Exception:
         pass
 
-# ===================== SECRETS =====================
+# ===================== SECRETS / EDIT MODE =====================
 APP_USERNAME = st.secrets.get("APP_USERNAME", "")
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
 SHEET_URL    = st.secrets.get("SHEET_URL", "")
 IS_EDIT_MODE = str(st.secrets.get("EDIT_MODE", "")).strip().lower() == "true"
 
-# ===================== GOOGLE AUTH + OPEN SHEET =====================
+# ===================== GOOGLE AUTH =====================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -167,15 +156,16 @@ def _gc():
 @st.cache_resource(show_spinner=False)
 def _open_sheet():
     if not SHEET_URL:
-        st.error("SHEET_URL not set in Secrets. Add it in App → Settings → Secrets.")
+        st.error("SHEET_URL not set in Secrets. Add it in Settings → Secrets.")
         st.stop()
     return _gc().open_by_url(SHEET_URL)
 
 with st.spinner("Connecting to Google Sheets…"):
-    sh = _open_sheet()
+    sh = None if IS_EDIT_MODE else _open_sheet()
 
-# ===================== REQUIRED HEADERS =====================
-MEM_HEADERS = ["Member_ID","Submitted_At","Approved","Resident_Type","Phase","Wing","Flat_No","Name","Email","Phone"]
+# ===================== HEADERS / CATEGORIES =====================
+MEM_HEADERS = ["Member_ID","Submitted_At","Approved","Resident_Type","Phase","Wing",
+               "Flat_No","Name","Email","Phone"]
 DIR_HEADERS = ["Listing_ID","Submitted_At","Approved","Member_Email","Resident_Type","Phase","Wing","Flat_No",
                "Business_Name","Category","Subcategory","Service_Type",
                "Short_Description","Detailed_Description",
@@ -187,7 +177,6 @@ SHOW_HEADERS= ["Show_ID","Submitted_At","Approved","Title","Type","URL","Posted_
 RATE_HEADERS= ["When","Type","Target_ID","Stars","Comment","Rater_Email"]
 SUPP_HEADERS= ["Ticket_ID","When","Email","Subject","Message","Status"]
 
-# ===================== CATEGORY → SUBCATEGORY =====================
 CATEGORIES: Dict[str, List[str]] = {
     "Food & Catering": ["Home Tiffin","Catering","Bakery","Snacks","Chaat","Sweets","Healthy Meals","Other"],
     "Education": ["Tuition","Coaching","Music","Dance","Languages","Coding","Art & Craft","Other"],
@@ -202,7 +191,7 @@ CATEGORIES: Dict[str, List[str]] = {
     "Other": ["Other"]
 }
 
-# ===================== ENSURE SHEETS (with backoff) =====================
+# ===================== WORKSHEET HELPERS (robust) =====================
 def _retry(call, *args, **kwargs):
     last = None
     for attempt in range(5):  # 0..4
@@ -210,7 +199,7 @@ def _retry(call, *args, **kwargs):
             return call(*args, **kwargs)
         except APIError as e:
             last = e
-            time.sleep((0.3 * (2**attempt)) + (random() * 0.2))
+            time.sleep((0.3 * (2**attempt)) + (random()*0.2))
     raise last
 
 def _ensure_headers(ws, headers):
@@ -225,7 +214,10 @@ def _get_or_create_worksheets(sh, required: list[tuple[str, list[str]]]):
     title_to_ws = {}
     existing = {ws.title: ws for ws in _retry(sh.worksheets)}
     for title, headers in required:
-        ws = existing.get(title) or _retry(sh.add_worksheet, title=title, rows=1000, cols=max(26, len(headers)))
+        if title in existing:
+            ws = existing[title]
+        else:
+            ws = _retry(sh.add_worksheet, title=title, rows=1000, cols=max(26, len(headers)))
         _ensure_headers(ws, headers)
         title_to_ws[title] = ws
     return title_to_ws
@@ -240,15 +232,19 @@ REQUIRED_TABS = [
 ]
 
 if IS_EDIT_MODE:
-    st.info("🚧 EDIT MODE is ON — Google Sheets calls are skipped so you can safely tweak UI.")
     ws_members = ws_dir = ws_ven = ws_show = ws_rate = ws_supp = None
 
     @st.cache_data(ttl=1)
     def read_df(tab: str) -> pd.DataFrame:
-        # Empty frames in edit mode
-        if tab == "Business_Listings":
-            return pd.DataFrame(columns=DIR_HEADERS)
-        return pd.DataFrame()
+        # empty frames in edit mode (UI only)
+        return pd.DataFrame(columns={
+            "Business_Listings": DIR_HEADERS,
+            "Members": MEM_HEADERS,
+            "Vicinity_Vendors": VEN_HEADERS,
+            "Showcase": SHOW_HEADERS,
+            "Ratings": RATE_HEADERS,
+            "Support_Tickets": SUPP_HEADERS,
+        }.get(tab, []))
 else:
     try:
         tabs_map = _get_or_create_worksheets(sh, REQUIRED_TABS)
@@ -259,8 +255,8 @@ else:
         ws_rate     = tabs_map["Ratings"]
         ws_supp     = tabs_map["Support_Tickets"]
     except Exception:
-        st.error("⚠️ Could not open or create worksheets right now. Please try again shortly.")
-        st.caption("Tip: set EDIT_MODE = \"true\" in Secrets while adjusting UI.")
+        st.error("Could not open/create Google Sheets right now. Please try again shortly.")
+        st.caption("Tip: set EDIT_MODE = \"true\" in Secrets while adjusting UI to keep the app up.")
         st.stop()
 
     @st.cache_data(ttl=45)
@@ -281,6 +277,7 @@ else:
         except Exception:
             return pd.DataFrame()
 
+# ===================== COMMON DF FILTER =====================
 def df_public(df: pd.DataFrame, approved_col="Approved", expires_col: Optional[str]="Expires_On") -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
@@ -305,14 +302,14 @@ def admin_login_ui():
         u = st.text_input("Username", key="adm_u")
         p = st.text_input("Password", type="password", key="adm_p")
         if st.button("Sign in", type="primary", key="adm_btn_signin"):
-            if u.strip() == st.secrets.get("APP_USERNAME","") and p == st.secrets.get("APP_PASSWORD",""):
+            if u.strip() == APP_USERNAME and p == APP_PASSWORD:
                 st.session_state.is_admin = True
                 st.success("✅ Admin logged in.")
                 _safe_rerun()
             else:
                 st.error("❌ Wrong credentials.")
 
-# ===================== MEMBER VERIFY SIGN-IN (PINNED) =====================
+# ===================== MEMBER VERIFY SIGN-IN (pinned) =====================
 def member_is_approved(email: str) -> bool:
     if not email:
         return False
@@ -343,7 +340,9 @@ def member_bar():
 
 # ===================== WRITE HELPERS =====================
 def _append_row(ws, data: dict, headers: list[str]):
-    ws.append_row([str(data.get(h,"")) for h in headers])
+    if IS_EDIT_MODE or ws is None:
+        return  # skip writes in edit mode
+    _retry(ws.append_row, [str(data.get(h,"")) for h in headers])
 
 def save_member(data: dict):
     payload = dict(
@@ -416,7 +415,75 @@ def save_rating(listing_id: str, stars: int, comment: str, email: str):
     )
     _append_row(ws_rate, payload, RATE_HEADERS)
 
-# ===================== APP HEADER + MEMBER BAR =====================
+# ===================== ADMIN ACTION HELPERS (approve/reject/extend) =====================
+def _header_map(ws, defaults: list[str]) -> dict[str,int]:
+    try:
+        row1 = _retry(ws.row_values, 1) if (ws and not IS_EDIT_MODE) else defaults
+    except APIError:
+        row1 = defaults
+    return {h:i+1 for i,h in enumerate(row1 or defaults)}
+
+def _find_row_by_id(ws, id_col_idx: int, id_value: str) -> Optional[int]:
+    if IS_EDIT_MODE or ws is None:
+        return None
+    try:
+        col = _retry(ws.col_values, id_col_idx)
+    except APIError:
+        col = []
+    for i, v in enumerate(col, start=1):
+        if str(v).strip() == str(id_value).strip():
+            return i
+    return None
+
+def approve_by_id(ws, id_col: str, id_val: str, defaults: list[str], extra: dict | None = None):
+    if IS_EDIT_MODE or ws is None:
+        return
+    hdr = _header_map(ws, defaults)
+    id_idx = hdr.get(id_col); ap_idx = hdr.get("Approved")
+    if not id_idx or not ap_idx:
+        return
+    row = _find_row_by_id(ws, id_idx, id_val)
+    if row is None:
+        return
+    _retry(ws.update_cell, row, ap_idx, "TRUE")
+    if extra:
+        for k, v in extra.items():
+            idx = hdr.get(k)
+            if idx:
+                _retry(ws.update_cell, row, idx, v)
+    clear_cache()
+
+def reject_by_id(ws, id_col: str, id_val: str, defaults: list[str]):
+    if IS_EDIT_MODE or ws is None:
+        return
+    hdr = _header_map(ws, defaults)
+    id_idx = hdr.get(id_col); ap_idx = hdr.get("Approved")
+    if not id_idx or not ap_idx:
+        return
+    row = _find_row_by_id(ws, id_idx, id_val)
+    if row is None:
+        return
+    _retry(ws.update_cell, row, ap_idx, "REJECTED"); clear_cache()
+
+def extend_expiry(ws, id_col: str, id_val: str, defaults: list[str], extra_days: int):
+    if IS_EDIT_MODE or ws is None:
+        return
+    hdr = _header_map(ws, defaults)
+    id_idx = hdr.get(id_col); ex_idx = hdr.get("Expires_On")
+    if not id_idx or not ex_idx:
+        return
+    row = _find_row_by_id(ws, id_idx, id_val)
+    if row is None:
+        return
+    current = (_retry(ws.cell, row, ex_idx).value if row else None) or dt.date.today().isoformat()
+    try:
+        cur = dt.date.fromisoformat(current)
+    except Exception:
+        cur = dt.date.today()
+    new_date = (cur + dt.timedelta(days=int(extra_days or 0))).isoformat()
+    _retry(ws.update_cell, row, ex_idx, new_date); clear_cache()
+
+# ===================== PINNED MEMBER SIGN-IN =====================
 member_bar()
 
 # ===================== NAV =====================
@@ -437,7 +504,7 @@ with tabs[0]:
                 st.markdown(
                     f"**{r.get('Title','')}**  ·  "
                     f"<span class='badge'>{r.get('Type','')}</span>  "
-                    f"<span class='small-dim'>by {r.get('Posted_By','')}</span>",
+                    f"<span style='opacity:.8'>by {r.get('Posted_By','')}</span>",
                     unsafe_allow_html=True
                 )
                 url = (r.get("URL","") or "").strip()
@@ -450,22 +517,22 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("About the App")
     st.markdown("""
-**What is this?**  
-A simple, community-first hub for *Atmosphere Society* residents & tenants.
+Welcome to the **Atmosphere Society Community Hub**.
 
-**You can**
-- Browse the **Resident Directory** (approved listings).
-- Suggest **Vicinity Vendors** that help the community.
-- See the **Showcase** wall for ads/promotions (admin-posted).
+**You can:**
+- Browse the **Resident Business Directory** (approved listings).
+- Suggest trusted **Vicinity Vendors**.
+- View the **Showcase** wall.
 - Submit a **Support Ticket** if you need help.
+- Give **feedback** in the Support tab.
 
-**Listings**
-- Submissions go to **Admin Approval**.
-- Choose listing period: **7 / 15 / 30 / 45 / 60 / 90 days**.
-- Expired listings stop showing automatically; Admin can extend.
+**How it works**
+- Register once → Admin approves your email → Sign in at the top.
+- Verified members can submit businesses/vendors and rate approved businesses.
+- Listings can be approved/rejected/extended by Admin.
 """)
 
-# ---- Resident Directory ----
+# ---- Resident Directory (Business) ----
 with tabs[2]:
     st.subheader("Resident Business Directory")
     df = df_public(read_df("Business_Listings"))
@@ -510,6 +577,7 @@ with tabs[2]:
                     st.caption(f"Phase: {r.get('Phase','')} · Wing: {r.get('Wing','')} · Flat: {r.get('Flat_No','')} · {r.get('Resident_Type','')}")
                     st.caption(f"Listing ID: {r.get('Listing_ID','')} · Expires: {r.get('Expires_On','')}")
 
+                    # Ratings: only if verified member
                     if "me" in st.session_state:
                         with st.form(f"rate_{r.get('Listing_ID','')}"):
                             st.markdown("**Rate this business**")
@@ -517,7 +585,12 @@ with tabs[2]:
                             comment = st.text_input("Comment (optional)", key=f"com_{r.get('Listing_ID','')}")
                             ok = st.form_submit_button("Submit rating")
                             if ok:
-                                save_rating(r.get("Listing_ID",""), int(stars), comment, st.session_state.me)
+                                save_rating(
+                                    listing_id=r.get("Listing_ID",""),
+                                    stars=int(stars),
+                                    comment=comment,
+                                    email=st.session_state.me
+                                )
                                 st.success("Thanks! Rating recorded.")
                     else:
                         st.info("Sign in as verified member (top bar) to rate.")
@@ -601,7 +674,7 @@ with tabs[3]:
                 ))
                 st.success("Submitted! Admin will review & approve.")
 
-# ---- Support ----
+# ---- Support (includes a tiny feedback box at bottom) ----
 with tabs[4]:
     st.subheader("Support")
     st.caption("Replies may take 7–15 days.")
@@ -613,6 +686,14 @@ with tabs[4]:
         if ok:
             save_ticket(em, sub, msg)
             st.success("Thanks! Ticket submitted.")
+
+    st.markdown("---")
+    st.markdown("#### Quick Feedback")
+    fb = st.text_area("Anything we should improve? (app flows, categories, bugs, etc.)", key="fb_text", height=100)
+    if st.button("Send feedback", key="fb_btn"):
+        if fb.strip():
+            save_ticket(em or "anonymous@feedback", "App Feedback", fb.strip())
+            st.success("Thanks for the feedback!")
 
 # ---- Register ----
 with tabs[5]:
@@ -657,11 +738,13 @@ with tabs[6]:
                 st.success("Added to Showcase.")
 
         st.markdown("### Approvals")
+
         dfm   = read_df("Members")
         dfd   = read_df("Business_Listings")
         dfv   = read_df("Vicinity_Vendors")
 
-        pend_m = dfm[dfm["Approved"].astype(str).str.upper()!="TRUE"] if not dfm.empty and "Approved" in dfm else pd.DataFrame()
+        # Members
+        pend_m = dfm[dfm.get("Approved","").astype(str).str.upper()!="TRUE"] if not dfm.empty else pd.DataFrame()
         with st.expander(f"Members (pending: {len(pend_m)})", expanded=False):
             if pend_m.empty:
                 st.info("No pending members.")
@@ -679,7 +762,8 @@ with tabs[6]:
                                 reject_by_id(ws_members,"Member_ID",row.get("Member_ID",""),MEM_HEADERS)
                                 st.warning("Rejected."); _safe_rerun()
 
-        pend_d = dfd[dfd["Approved"].astype(str).str.upper()!="TRUE"] if not dfd.empty and "Approved" in dfd else pd.DataFrame()
+        # Business Listings
+        pend_d = dfd[dfd.get("Approved","").astype(str).str.upper()!="TRUE"] if not dfd.empty else pd.DataFrame()
         with st.expander(f"Business Listings (pending: {len(pend_d)})", expanded=False):
             if pend_d.empty:
                 st.info("No pending listings.")
@@ -707,7 +791,8 @@ with tabs[6]:
                                 extend_expiry(ws_dir,"Listing_ID",row.get("Listing_ID",""),DIR_HEADERS,int(more))
                                 st.success("Expiry extended."); _safe_rerun()
 
-        pend_v = dfv[dfv["Approved"].astype(str).str.upper()!="TRUE"] if not dfv.empty and "Approved" in dfv else pd.DataFrame()
+        # Vendors
+        pend_v = dfv[dfv.get("Approved","").astype(str).str.upper()!="TRUE"] if not dfv.empty else pd.DataFrame()
         with st.expander(f"Vicinity Vendors (pending: {len(pend_v)})", expanded=False):
             if pend_v.empty:
                 st.info("No pending vendor submissions.")
