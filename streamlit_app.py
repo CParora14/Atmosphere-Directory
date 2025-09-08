@@ -337,7 +337,7 @@ def member_bar():
     with st.container():
         cols = st.columns([2,5,2])
         with cols[0]:
-            st.markdown("#### 👤 Member Sign-in")
+            st.markdown("#### 👤 Member Sign-in", unsafe_allow_html=True)
         with cols[1]:
             email_in = st.text_input("Your Email (member)", key="me_email_input").strip()
         with cols[2]:
