@@ -1,9 +1,7 @@
-# Atmosphere Society — Community Hub
-# Full app: Showcase • Directory • Vendors • Support • Admin
+# ================== TOP SECTION (imports + theme + backdrop) ==================
 from __future__ import annotations
-import uuid, datetime as dt, time
+import uuid, datetime as dt
 from typing import Optional, Dict, List
-from random import random
 
 import streamlit as st
 import gspread
@@ -11,38 +9,88 @@ import pandas as pd
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import WorksheetNotFound, APIError
 
-# -------------------- BRAND / THEME (optional backdrop/logo via Secrets) --------------------
-# --- BACKDROP (reliable ::before layer) ---
-bg_url = st.secrets.get("BACKDROP_URL", "").strip()
+# -------------------- BRAND / THEME --------------------
+PRIMARY   = "#18B8CB"
+PRIMARY_2 = "#6BC6FF"
+INK       = "#0C2AAA"
+CARD_BG   = "#0E1C2B"
+PAGE_BG   = "#0A1522"
+
+# Logo / backdrop come from Streamlit Secrets so you can change them without editing code
+# In Streamlit Cloud: App → Settings → Secrets
+#   LOGO_URL = "https://..."
+#   BACKDROP_URL = "https://raw.githubusercontent.com/.../Wadhwaatmosphere1%20Image.webp"
+LOGO_URL     = st.secrets.get("LOGO_URL", "").strip()
+BACKDROP_URL = st.secrets.get("BACKDROP_URL", "").strip()
+
+st.set_page_config(
+    page_title="Atmosphere Society — Community Hub",
+    page_icon="🏡",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+# -------------------- RELIABLE FULL-SCREEN BACKDROP --------------------
+# We render the background image behind the app using a fixed ::before layer.
+# This is more reliable than styling the container background directly.
+bg_url = BACKDROP_URL  # alias
 
 st.markdown(f"""
 <style>
-/* Clear any previous backgrounds */
+/* Reset any previous backgrounds so we fully control the canvas */
 html, body, .stApp, .stApp > div[data-testid="stAppViewContainer"] {{
   background: transparent !important;
 }}
 
-/* Full-screen background image behind everything */
+/* Full-screen image behind everything with a subtle dark gradient on top */
 .stApp::before {{
   content: "";
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: -1;  /* keep it behind all content */
   background-image:
-    linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.45)),
+    linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.45)) ,
     url('{bg_url}');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
 }}
+
+/* Global typography/colors and tabs */
+:root {{
+  --brand:{PRIMARY}; --brand2:{PRIMARY_2}; --ink:{INK}; --card:{CARD_BG}; --page:{PAGE_BG};
+}}
+.block-container {{ padding-top:1rem; padding-bottom:2rem; max-width:1200px; }}
+[data-testid="stHeader"] {{ background: transparent; }}
+
+.stTabs [data-baseweb="tab"] {{ color:#EAF2FA; font-weight:600; }}
+.stTabs [aria-selected="true"] {{
+  background: linear-gradient(90deg, var(--brand), var(--brand2))!important;
+  color:#001018!important; border-radius:10px;
+}}
+
+.banner {{
+  width:100%; padding:18px 22px; border-radius:18px;
+  background: linear-gradient(135deg, {PRIMARY} 0%, {PRIMARY_2} 100%);
+  color:#001018; box-shadow:0 10px 30px rgba(0,0,0,.25);
+}}
+.card {{
+  background:var(--card); border-radius:16px; padding:16px 18px;
+  border:1px solid rgba(255,255,255,.06)
+}}
+.badge {{
+  padding:2px 8px; border-radius:100px; font-size:12px;
+  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.08)
+}}
+.small-dim {{ color:#b9c8d8; font-size:12px; }}
+hr {{ border: none; border-top: 1px solid rgba(255,255,255,.15); margin: 0.6rem 0 1rem; }}
 </style>
 """, unsafe_allow_html=True)
 
-# (Optional) sanity check: shows the URL the app is using
-st.caption(f"Backdrop URL: {bg_url or '(not set)'}")
+# Optional little line so you can verify the image URL is actually set
+st.caption(f"Backdrop URL: {bg_url or '(not set — add BACKDROP_URL in Secrets)'}")
 
-
-# -------------------- CONSTANTS / UTILS --------------------
+# -------------------- SMALL UTILS USED LATER --------------------
 TRUE_LIKE = {"true", "yes", "y", "1"}
 
 def _now_iso() -> str:
@@ -62,6 +110,7 @@ def clear_cache():
         st.cache_data.clear()
     except Exception:
         pass
+# ================== END TOP SECTION ===========================================
 
 # -------------------- SECRETS --------------------
 APP_USERNAME = st.secrets.get("APP_USERNAME", "")
